@@ -1,0 +1,791 @@
+---
+title: MySQL
+description: Comprehensive guide to MySQL including CLI commands, storage engines, replication, and MySQL-specific features
+---
+
+MySQL is one of the most popular open-source relational databases, known for its ease of use, reliability, and strong community support. This guide covers MySQL-specific features, CLI commands, and best practices.
+
+## Installation
+
+### macOS
+
+```bash
+# Using Homebrew
+brew install mysql
+
+# Start MySQL service
+brew services start mysql
+
+# Secure installation
+mysql_secure_installation
+```
+
+### Linux (Ubuntu/Debian)
+
+```bash
+# Install MySQL
+sudo apt-get update
+sudo apt-get install mysql-server
+
+# Start service
+sudo systemctl start mysql
+sudo systemctl enable mysql
+
+# Secure installation
+sudo mysql_secure_installation
+```
+
+### Docker
+
+```bash
+# Run MySQL container
+docker run -d \
+  --name mysql \
+  -e MYSQL_ROOT_PASSWORD=rootpassword \
+  -e MYSQL_DATABASE=mydb \
+  -e MYSQL_USER=myuser \
+  -e MYSQL_PASSWORD=mypassword \
+  -p 3306:3306 \
+  -v mysql_data:/var/lib/mysql \
+  mysql:8
+
+# Connect to container
+docker exec -it mysql mysql -u myuser -p mydb
+```
+
+## MySQL CLI Reference
+
+### Connection
+
+```bash
+# Basic connection
+mysql -h localhost -P 3306 -u root -p
+
+# Connect to specific database
+mysql -h localhost -u root -p mydatabase
+
+# Execute query directly
+mysql -h localhost -u root -p -e "SELECT NOW();"
+
+# Execute SQL file
+mysql -h localhost -u root -p mydatabase < script.sql
+
+# Connection with options
+mysql -h localhost -u root -p --default-character-set=utf8mb4 mydatabase
+```
+
+### Basic Commands
+
+```sql
+-- Show databases
+SHOW DATABASES;
+
+-- Create database
+CREATE DATABASE mydb CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Use database
+USE mydb;
+
+-- Show tables
+SHOW TABLES;
+
+-- Describe table
+DESCRIBE users;
+SHOW CREATE TABLE users;
+
+-- Show columns
+SHOW COLUMNS FROM users;
+
+-- Show indexes
+SHOW INDEX FROM users;
+
+-- Current database and user
+SELECT DATABASE(), USER();
+
+-- Version
+SELECT VERSION();
+
+-- Status
+SHOW STATUS;
+SHOW GLOBAL STATUS;
+
+-- Variables
+SHOW VARIABLES LIKE 'max_connections';
+SHOW VARIABLES LIKE '%buffer%';
+```
+
+### Useful Commands
+
+```sql
+-- Show running processes
+SHOW PROCESSLIST;
+SHOW FULL PROCESSLIST;
+
+-- Kill a process
+KILL 123;
+
+-- Show table status
+SHOW TABLE STATUS;
+SHOW TABLE STATUS LIKE 'users';
+
+-- Show warnings and errors
+SHOW WARNINGS;
+SHOW ERRORS;
+
+-- Clear screen
+\! clear
+
+-- Exit
+\q
+EXIT;
+QUIT;
+```
+
+## Storage Engines
+
+MySQL supports multiple storage engines. InnoDB is the default and recommended for most use cases.
+
+### InnoDB (Default)
+
+```sql
+-- Create InnoDB table (default)
+CREATE TABLE orders (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    total DECIMAL(10, 2) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_customer (customer_id),
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+) ENGINE=InnoDB;
+```
+
+**InnoDB Features:**
+- ✅ ACID compliant transactions
+- ✅ Row-level locking
+- ✅ Foreign key support
+- ✅ Crash recovery
+- ✅ MVCC (Multi-Version Concurrency Control)
+
+### MyISAM (Legacy)
+
+```sql
+-- Create MyISAM table
+CREATE TABLE logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    message TEXT,
+    created_at TIMESTAMP
+) ENGINE=MyISAM;
+```
+
+**MyISAM Features:**
+- ✅ Fast read operations
+- ✅ Full-text search (legacy)
+- ❌ No transactions
+- ❌ Table-level locking
+- ❌ No foreign keys
+
+### Engine Comparison
+
+| Feature | InnoDB | MyISAM |
+|---------|--------|--------|
+| Transactions | ✅ | ❌ |
+| Row-level locks | ✅ | ❌ (table-level) |
+| Foreign keys | ✅ | ❌ |
+| Crash recovery | ✅ | ❌ |
+| Full-text search | ✅ (5.6+) | ✅ |
+| Count(*) speed | Slower | Fast |
+| Default since | MySQL 5.5 | Pre-5.5 |
+
+<Callout type="info">
+  Use InnoDB for all new tables unless you have a specific reason not to.
+</Callout>
+
+## Data Types
+
+### Numeric Types
+
+```sql
+-- Integer types
+TINYINT        -- -128 to 127 (1 byte)
+SMALLINT       -- -32,768 to 32,767 (2 bytes)
+MEDIUMINT      -- -8,388,608 to 8,388,607 (3 bytes)
+INT / INTEGER  -- -2.1B to 2.1B (4 bytes)
+BIGINT         -- -9.2E18 to 9.2E18 (8 bytes)
+
+-- Unsigned variants
+INT UNSIGNED   -- 0 to 4.2B
+
+-- Decimal types
+DECIMAL(10, 2) -- Exact precision (for money)
+FLOAT          -- Approximate (4 bytes)
+DOUBLE         -- Approximate (8 bytes)
+```
+
+### String Types
+
+```sql
+-- Fixed-length
+CHAR(50)       -- Always 50 bytes
+
+-- Variable-length
+VARCHAR(255)   -- Up to 255 characters
+TEXT           -- Up to 65,535 characters
+MEDIUMTEXT     -- Up to 16 MB
+LONGTEXT       -- Up to 4 GB
+
+-- Binary
+BINARY(50)
+VARBINARY(255)
+BLOB           -- Up to 65,535 bytes
+MEDIUMBLOB     -- Up to 16 MB
+LONGBLOB       -- Up to 4 GB
+```
+
+### Date/Time Types
+
+```sql
+-- Date and time
+DATE           -- 'YYYY-MM-DD'
+TIME           -- 'HH:MM:SS'
+DATETIME       -- 'YYYY-MM-DD HH:MM:SS'
+TIMESTAMP      -- UTC, auto-converts timezone
+YEAR           -- 'YYYY'
+
+-- Common patterns
+created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+```
+
+### JSON Type (MySQL 5.7+)
+
+```sql
+-- Create table with JSON
+CREATE TABLE products (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255),
+    attributes JSON
+);
+
+-- Insert JSON
+INSERT INTO products (name, attributes) VALUES (
+    'Laptop',
+    '{"brand": "Dell", "specs": {"ram": 16, "storage": 512}}'
+);
+
+-- Query JSON
+SELECT 
+    name,
+    attributes->>'$.brand' AS brand,
+    attributes->'$.specs.ram' AS ram
+FROM products;
+
+-- JSON functions
+SELECT JSON_EXTRACT(attributes, '$.brand') FROM products;
+SELECT JSON_UNQUOTE(JSON_EXTRACT(attributes, '$.brand')) FROM products;
+
+-- Search in JSON
+SELECT * FROM products 
+WHERE JSON_CONTAINS(attributes, '"Dell"', '$.brand');
+
+SELECT * FROM products 
+WHERE attributes->'$.specs.ram' > 8;
+
+-- Update JSON
+UPDATE products 
+SET attributes = JSON_SET(attributes, '$.color', 'silver')
+WHERE id = 1;
+
+-- Create index on JSON (MySQL 8.0+)
+ALTER TABLE products ADD INDEX idx_brand ((CAST(attributes->>'$.brand' AS CHAR(50))));
+```
+
+## Indexes
+
+### Creating Indexes
+
+```sql
+-- Single column index
+CREATE INDEX idx_users_email ON users (email);
+
+-- Unique index
+CREATE UNIQUE INDEX idx_users_email ON users (email);
+
+-- Composite index
+CREATE INDEX idx_orders_customer_date ON orders (customer_id, created_at);
+
+-- Prefix index (for long strings)
+CREATE INDEX idx_articles_title ON articles (title(100));
+
+-- Descending index (MySQL 8.0+)
+CREATE INDEX idx_orders_date_desc ON orders (created_at DESC);
+
+-- Full-text index
+CREATE FULLTEXT INDEX idx_articles_content ON articles (title, body);
+
+-- Invisible index (MySQL 8.0+) - for testing removal
+ALTER TABLE users ALTER INDEX idx_users_email INVISIBLE;
+ALTER TABLE users ALTER INDEX idx_users_email VISIBLE;
+```
+
+### Full-Text Search
+
+```sql
+-- Create full-text index
+ALTER TABLE articles ADD FULLTEXT INDEX ft_idx (title, body);
+
+-- Natural language search
+SELECT * FROM articles 
+WHERE MATCH(title, body) AGAINST('database optimization');
+
+-- Boolean mode (advanced operators)
+SELECT * FROM articles 
+WHERE MATCH(title, body) AGAINST('+MySQL -Oracle' IN BOOLEAN MODE);
+
+-- Boolean operators:
+-- + : Must contain
+-- - : Must not contain
+-- > : Increase relevance
+-- < : Decrease relevance
+-- * : Wildcard
+-- "" : Exact phrase
+
+-- With relevance score
+SELECT 
+    title,
+    MATCH(title, body) AGAINST('database') AS relevance
+FROM articles 
+WHERE MATCH(title, body) AGAINST('database')
+ORDER BY relevance DESC;
+```
+
+## Transactions
+
+```sql
+-- Basic transaction
+START TRANSACTION;
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+COMMIT;
+
+-- Rollback
+START TRANSACTION;
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+-- Something went wrong
+ROLLBACK;
+
+-- Savepoints
+START TRANSACTION;
+INSERT INTO orders (customer_id, total) VALUES (1, 100);
+SAVEPOINT order_created;
+INSERT INTO order_items (order_id, product_id) VALUES (1, 1);
+-- Error occurred
+ROLLBACK TO SAVEPOINT order_created;
+COMMIT;
+
+-- Isolation levels
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;  -- Default
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+-- Auto-commit
+SET autocommit = 0;  -- Disable auto-commit
+-- ... multiple statements ...
+COMMIT;
+SET autocommit = 1;  -- Re-enable
+```
+
+## Stored Procedures & Functions
+
+### Stored Procedures
+
+```sql
+-- Create procedure
+DELIMITER //
+CREATE PROCEDURE GetCustomerOrders(IN customer_id INT)
+BEGIN
+    SELECT o.id, o.total, o.created_at
+    FROM orders o
+    WHERE o.customer_id = customer_id
+    ORDER BY o.created_at DESC;
+END //
+DELIMITER ;
+
+-- Call procedure
+CALL GetCustomerOrders(123);
+
+-- Procedure with OUT parameter
+DELIMITER //
+CREATE PROCEDURE GetOrderTotal(
+    IN order_id INT,
+    OUT total_amount DECIMAL(10, 2)
+)
+BEGIN
+    SELECT SUM(quantity * price) INTO total_amount
+    FROM order_items
+    WHERE order_items.order_id = order_id;
+END //
+DELIMITER ;
+
+-- Call with OUT parameter
+CALL GetOrderTotal(123, @total);
+SELECT @total;
+
+-- Drop procedure
+DROP PROCEDURE IF EXISTS GetCustomerOrders;
+```
+
+### Functions
+
+```sql
+-- Create function
+DELIMITER //
+CREATE FUNCTION CalculateDiscount(
+    price DECIMAL(10, 2),
+    discount_percent INT
+) 
+RETURNS DECIMAL(10, 2)
+DETERMINISTIC
+BEGIN
+    RETURN price * (1 - discount_percent / 100);
+END //
+DELIMITER ;
+
+-- Use function
+SELECT name, price, CalculateDiscount(price, 10) AS discounted_price
+FROM products;
+
+-- Drop function
+DROP FUNCTION IF EXISTS CalculateDiscount;
+```
+
+## Triggers
+
+```sql
+-- Create trigger (BEFORE INSERT)
+DELIMITER //
+CREATE TRIGGER before_user_insert
+BEFORE INSERT ON users
+FOR EACH ROW
+BEGIN
+    SET NEW.created_at = NOW();
+    SET NEW.email = LOWER(NEW.email);
+END //
+DELIMITER ;
+
+-- Create trigger (AFTER UPDATE)
+DELIMITER //
+CREATE TRIGGER after_order_update
+AFTER UPDATE ON orders
+FOR EACH ROW
+BEGIN
+    INSERT INTO order_audit (order_id, old_status, new_status, changed_at)
+    VALUES (NEW.id, OLD.status, NEW.status, NOW());
+END //
+DELIMITER ;
+
+-- Show triggers
+SHOW TRIGGERS;
+SHOW TRIGGERS LIKE 'users';
+
+-- Drop trigger
+DROP TRIGGER IF EXISTS before_user_insert;
+```
+
+## Views
+
+```sql
+-- Create view
+CREATE VIEW active_customers AS
+SELECT 
+    c.id,
+    c.name,
+    c.email,
+    COUNT(o.id) AS order_count,
+    SUM(o.total) AS total_spent
+FROM customers c
+LEFT JOIN orders o ON c.id = o.customer_id
+WHERE c.status = 'active'
+GROUP BY c.id, c.name, c.email;
+
+-- Use view
+SELECT * FROM active_customers WHERE total_spent > 1000;
+
+-- Create or replace
+CREATE OR REPLACE VIEW active_customers AS
+SELECT ...;
+
+-- Updatable view
+CREATE VIEW pending_orders AS
+SELECT id, customer_id, total, status
+FROM orders
+WHERE status = 'pending';
+
+-- Update through view
+UPDATE pending_orders SET status = 'processing' WHERE id = 123;
+
+-- Drop view
+DROP VIEW IF EXISTS active_customers;
+```
+
+## Performance Tuning
+
+### EXPLAIN Analysis
+
+```sql
+-- Basic explain
+EXPLAIN SELECT * FROM users WHERE email = 'john@example.com';
+
+-- Extended format
+EXPLAIN FORMAT=JSON SELECT * FROM users WHERE email = 'john@example.com';
+
+-- Analyze (MySQL 8.0.18+)
+EXPLAIN ANALYZE SELECT * FROM users WHERE email = 'john@example.com';
+
+-- Key columns in EXPLAIN output:
+-- type: system > const > eq_ref > ref > range > index > ALL
+-- key: Index being used (NULL = no index)
+-- rows: Estimated rows to examine
+-- Extra: Additional info (Using index, Using filesort, etc.)
+```
+
+### Query Optimization
+
+```sql
+-- Index hints
+SELECT * FROM users USE INDEX (idx_users_email) WHERE email = 'test@example.com';
+SELECT * FROM users FORCE INDEX (idx_users_email) WHERE email = 'test@example.com';
+SELECT * FROM users IGNORE INDEX (idx_users_email) WHERE email = 'test@example.com';
+
+-- Optimizer hints (MySQL 8.0+)
+SELECT /*+ NO_INDEX_MERGE(users) */ * FROM users WHERE a = 1 OR b = 2;
+SELECT /*+ JOIN_ORDER(t1, t2) */ * FROM t1 JOIN t2 ON ...;
+
+-- SQL_CALC_FOUND_ROWS for pagination
+SELECT SQL_CALC_FOUND_ROWS * FROM products LIMIT 10;
+SELECT FOUND_ROWS();  -- Total rows without LIMIT
+```
+
+### Configuration Tuning
+
+```sql
+-- Key buffer settings
+-- For InnoDB (recommended)
+innodb_buffer_pool_size = 4G        -- 70-80% of RAM for dedicated server
+innodb_log_file_size = 256M
+innodb_flush_log_at_trx_commit = 1  -- 1 = ACID safe, 2 = faster
+innodb_file_per_table = ON
+
+-- Query cache (deprecated in 8.0)
+query_cache_type = 0
+query_cache_size = 0
+
+-- Connections
+max_connections = 151
+wait_timeout = 28800
+
+-- Temporary tables
+tmp_table_size = 64M
+max_heap_table_size = 64M
+
+-- Slow query log
+slow_query_log = ON
+slow_query_log_file = /var/log/mysql/slow.log
+long_query_time = 2
+```
+
+### Monitoring Queries
+
+```sql
+-- Show slow queries
+SELECT * FROM mysql.slow_log ORDER BY start_time DESC LIMIT 10;
+
+-- Performance Schema (MySQL 5.6+)
+SELECT 
+    DIGEST_TEXT,
+    COUNT_STAR,
+    AVG_TIMER_WAIT/1000000000 AS avg_latency_ms,
+    SUM_ROWS_EXAMINED,
+    SUM_ROWS_SENT
+FROM performance_schema.events_statements_summary_by_digest
+ORDER BY AVG_TIMER_WAIT DESC
+LIMIT 10;
+
+-- InnoDB status
+SHOW ENGINE INNODB STATUS\G
+
+-- Table statistics
+SHOW TABLE STATUS LIKE 'users'\G
+```
+
+## Replication
+
+### Master-Slave Setup
+
+```sql
+-- On Master: Enable binary logging (my.cnf)
+[mysqld]
+server-id = 1
+log_bin = /var/log/mysql/mysql-bin.log
+binlog_format = ROW
+
+-- Create replication user
+CREATE USER 'repl'@'%' IDENTIFIED BY 'password';
+GRANT REPLICATION SLAVE ON *.* TO 'repl'@'%';
+
+-- Get master status
+SHOW MASTER STATUS;
+
+-- On Slave: Configure replication
+CHANGE MASTER TO
+    MASTER_HOST='master_ip',
+    MASTER_USER='repl',
+    MASTER_PASSWORD='password',
+    MASTER_LOG_FILE='mysql-bin.000001',
+    MASTER_LOG_POS=123;
+
+-- Start replication
+START SLAVE;
+
+-- Check status
+SHOW SLAVE STATUS\G
+
+-- Key fields to check:
+-- Slave_IO_Running: Yes
+-- Slave_SQL_Running: Yes
+-- Seconds_Behind_Master: 0
+```
+
+## Backup & Restore
+
+```bash
+# mysqldump - logical backup
+mysqldump -u root -p --single-transaction mydb > backup.sql
+mysqldump -u root -p --all-databases > all_databases.sql
+
+# With compression
+mysqldump -u root -p mydb | gzip > backup.sql.gz
+
+# Specific tables
+mysqldump -u root -p mydb users orders > tables_backup.sql
+
+# Schema only
+mysqldump -u root -p --no-data mydb > schema.sql
+
+# Data only
+mysqldump -u root -p --no-create-info mydb > data.sql
+
+# Restore
+mysql -u root -p mydb < backup.sql
+
+# From compressed
+gunzip < backup.sql.gz | mysql -u root -p mydb
+```
+
+## User Management
+
+```sql
+-- Create user
+CREATE USER 'appuser'@'localhost' IDENTIFIED BY 'password';
+CREATE USER 'appuser'@'%' IDENTIFIED BY 'password';  -- Any host
+
+-- Grant privileges
+GRANT SELECT, INSERT, UPDATE ON mydb.* TO 'appuser'@'localhost';
+GRANT ALL PRIVILEGES ON mydb.* TO 'appuser'@'localhost';
+
+-- Read-only user
+GRANT SELECT ON mydb.* TO 'readonly'@'%';
+
+-- Show grants
+SHOW GRANTS FOR 'appuser'@'localhost';
+
+-- Revoke privileges
+REVOKE INSERT ON mydb.* FROM 'appuser'@'localhost';
+
+-- Change password
+ALTER USER 'appuser'@'localhost' IDENTIFIED BY 'new_password';
+
+-- Drop user
+DROP USER 'appuser'@'localhost';
+
+-- Flush privileges (apply changes)
+FLUSH PRIVILEGES;
+```
+
+## Common Patterns
+
+### Auto-increment
+
+```sql
+-- Basic auto-increment
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255)
+);
+
+-- Get last inserted ID
+INSERT INTO users (name) VALUES ('John');
+SELECT LAST_INSERT_ID();
+
+-- Reset auto-increment
+ALTER TABLE users AUTO_INCREMENT = 1000;
+```
+
+### Upsert (INSERT ON DUPLICATE KEY)
+
+```sql
+-- Insert or update on duplicate key
+INSERT INTO users (email, name, updated_at)
+VALUES ('john@example.com', 'John Doe', NOW())
+ON DUPLICATE KEY UPDATE 
+    name = VALUES(name),
+    updated_at = VALUES(updated_at);
+
+-- Using VALUES() function (deprecated in 8.0.20+)
+-- New syntax:
+INSERT INTO users (email, name, updated_at)
+VALUES ('john@example.com', 'John Doe', NOW()) AS new
+ON DUPLICATE KEY UPDATE 
+    name = new.name,
+    updated_at = new.updated_at;
+```
+
+### REPLACE Statement
+
+```sql
+-- Delete and insert (if duplicate)
+REPLACE INTO users (id, email, name)
+VALUES (1, 'john@example.com', 'John Doe');
+```
+
+### Pagination
+
+```sql
+-- Basic pagination
+SELECT * FROM products ORDER BY id LIMIT 10 OFFSET 0;   -- Page 1
+SELECT * FROM products ORDER BY id LIMIT 10 OFFSET 10;  -- Page 2
+
+-- Efficient keyset pagination
+SELECT * FROM products 
+WHERE id > 1000  -- Last ID from previous page
+ORDER BY id 
+LIMIT 10;
+```
+
+### Bulk Insert
+
+```sql
+-- Multiple rows in single INSERT
+INSERT INTO logs (level, message, created_at) VALUES
+    ('INFO', 'Application started', NOW()),
+    ('DEBUG', 'Processing request', NOW()),
+    ('INFO', 'Request completed', NOW());
+
+-- Load from file
+LOAD DATA INFILE '/path/to/data.csv'
+INTO TABLE products
+FIELDS TERMINATED BY ','
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 ROWS;
+```

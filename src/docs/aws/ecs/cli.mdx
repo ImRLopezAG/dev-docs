@@ -1,0 +1,552 @@
+---
+title: ECS CLI Reference
+description: AWS CLI commands for ECS
+---
+
+Complete reference for AWS ECS CLI commands with examples.
+
+## Clusters
+
+### Create Cluster
+
+```bash
+# Simple cluster
+aws ecs create-cluster --cluster-name my-cluster
+
+# With Container Insights
+aws ecs create-cluster \
+  --cluster-name my-cluster \
+  --settings name=containerInsights,value=enabled
+
+# With capacity providers
+aws ecs create-cluster \
+  --cluster-name my-cluster \
+  --capacity-providers FARGATE FARGATE_SPOT \
+  --default-capacity-provider-strategy \
+    capacityProvider=FARGATE,weight=1,base=1 \
+    capacityProvider=FARGATE_SPOT,weight=4
+
+# With tags
+aws ecs create-cluster \
+  --cluster-name my-cluster \
+  --tags key=Environment,value=prod
+```
+
+### List Clusters
+
+```bash
+aws ecs list-clusters
+```
+
+### Describe Cluster
+
+```bash
+aws ecs describe-clusters --clusters my-cluster
+
+# With statistics
+aws ecs describe-clusters \
+  --clusters my-cluster \
+  --include STATISTICS SETTINGS CONFIGURATIONS
+```
+
+### Update Cluster Settings
+
+```bash
+aws ecs update-cluster-settings \
+  --cluster my-cluster \
+  --settings name=containerInsights,value=enabled
+```
+
+### Delete Cluster
+
+```bash
+aws ecs delete-cluster --cluster my-cluster
+```
+
+## Task Definitions
+
+### Register Task Definition
+
+```bash
+aws ecs register-task-definition \
+  --cli-input-json file://task-definition.json
+```
+
+### List Task Definitions
+
+```bash
+# All families
+aws ecs list-task-definitions
+
+# Filter by family
+aws ecs list-task-definitions --family-prefix my-app
+
+# Only active
+aws ecs list-task-definitions --status ACTIVE
+```
+
+### Describe Task Definition
+
+```bash
+aws ecs describe-task-definition --task-definition my-app:1
+
+# Include tags
+aws ecs describe-task-definition \
+  --task-definition my-app:1 \
+  --include TAGS
+```
+
+### Deregister Task Definition
+
+```bash
+aws ecs deregister-task-definition --task-definition my-app:1
+```
+
+### Delete Task Definitions
+
+```bash
+aws ecs delete-task-definitions --task-definitions my-app:1 my-app:2
+```
+
+## Services
+
+### Create Service
+
+```bash
+# Fargate service
+aws ecs create-service \
+  --cluster my-cluster \
+  --service-name my-service \
+  --task-definition my-app:1 \
+  --desired-count 2 \
+  --launch-type FARGATE \
+  --network-configuration '{
+    "awsvpcConfiguration": {
+      "subnets": ["subnet-abc123", "subnet-def456"],
+      "securityGroups": ["sg-123abc"],
+      "assignPublicIp": "ENABLED"
+    }
+  }'
+
+# With load balancer
+aws ecs create-service \
+  --cluster my-cluster \
+  --service-name my-service \
+  --task-definition my-app:1 \
+  --desired-count 3 \
+  --launch-type FARGATE \
+  --network-configuration '{
+    "awsvpcConfiguration": {
+      "subnets": ["subnet-abc123"],
+      "securityGroups": ["sg-123abc"],
+      "assignPublicIp": "DISABLED"
+    }
+  }' \
+  --load-balancers '[
+    {
+      "targetGroupArn": "arn:aws:elasticloadbalancing:...",
+      "containerName": "app",
+      "containerPort": 3000
+    }
+  ]' \
+  --health-check-grace-period-seconds 60
+
+# With capacity provider strategy
+aws ecs create-service \
+  --cluster my-cluster \
+  --service-name my-service \
+  --task-definition my-app:1 \
+  --desired-count 4 \
+  --capacity-provider-strategy \
+    capacityProvider=FARGATE,weight=1,base=1 \
+    capacityProvider=FARGATE_SPOT,weight=4
+
+# With deployment configuration
+aws ecs create-service \
+  --cluster my-cluster \
+  --service-name my-service \
+  --task-definition my-app:1 \
+  --desired-count 2 \
+  --launch-type FARGATE \
+  --deployment-configuration '{
+    "deploymentCircuitBreaker": {
+      "enable": true,
+      "rollback": true
+    },
+    "maximumPercent": 200,
+    "minimumHealthyPercent": 100
+  }'
+
+# With service discovery
+aws ecs create-service \
+  --cluster my-cluster \
+  --service-name my-service \
+  --task-definition my-app:1 \
+  --service-registries registryArn=arn:aws:servicediscovery:...
+```
+
+### List Services
+
+```bash
+aws ecs list-services --cluster my-cluster
+```
+
+### Describe Services
+
+```bash
+aws ecs describe-services \
+  --cluster my-cluster \
+  --services my-service
+
+# Multiple services
+aws ecs describe-services \
+  --cluster my-cluster \
+  --services my-service-1 my-service-2
+```
+
+### Update Service
+
+```bash
+# Update task definition
+aws ecs update-service \
+  --cluster my-cluster \
+  --service my-service \
+  --task-definition my-app:2
+
+# Scale up/down
+aws ecs update-service \
+  --cluster my-cluster \
+  --service my-service \
+  --desired-count 5
+
+# Force new deployment
+aws ecs update-service \
+  --cluster my-cluster \
+  --service my-service \
+  --force-new-deployment
+
+# Update capacity provider strategy
+aws ecs update-service \
+  --cluster my-cluster \
+  --service my-service \
+  --capacity-provider-strategy \
+    capacityProvider=FARGATE_SPOT,weight=1
+```
+
+### Delete Service
+
+```bash
+# Scale to 0 first
+aws ecs update-service \
+  --cluster my-cluster \
+  --service my-service \
+  --desired-count 0
+
+# Delete
+aws ecs delete-service \
+  --cluster my-cluster \
+  --service my-service
+
+# Force delete (stops tasks)
+aws ecs delete-service \
+  --cluster my-cluster \
+  --service my-service \
+  --force
+```
+
+## Tasks
+
+### Run Task
+
+```bash
+# Run standalone task
+aws ecs run-task \
+  --cluster my-cluster \
+  --task-definition my-app:1 \
+  --launch-type FARGATE \
+  --network-configuration '{
+    "awsvpcConfiguration": {
+      "subnets": ["subnet-abc123"],
+      "securityGroups": ["sg-123abc"],
+      "assignPublicIp": "ENABLED"
+    }
+  }'
+
+# Run multiple instances
+aws ecs run-task \
+  --cluster my-cluster \
+  --task-definition my-app:1 \
+  --count 3
+
+# With overrides
+aws ecs run-task \
+  --cluster my-cluster \
+  --task-definition my-app:1 \
+  --overrides '{
+    "containerOverrides": [
+      {
+        "name": "app",
+        "command": ["./migrate.sh"],
+        "environment": [
+          {"name": "RUN_MIGRATIONS", "value": "true"}
+        ]
+      }
+    ]
+  }'
+```
+
+### List Tasks
+
+```bash
+# All tasks in cluster
+aws ecs list-tasks --cluster my-cluster
+
+# Filter by service
+aws ecs list-tasks \
+  --cluster my-cluster \
+  --service-name my-service
+
+# Filter by status
+aws ecs list-tasks \
+  --cluster my-cluster \
+  --desired-status RUNNING
+```
+
+### Describe Tasks
+
+```bash
+aws ecs describe-tasks \
+  --cluster my-cluster \
+  --tasks task-id-1 task-id-2
+```
+
+### Stop Task
+
+```bash
+aws ecs stop-task \
+  --cluster my-cluster \
+  --task task-id \
+  --reason "Manual stop"
+```
+
+### Execute Command (ECS Exec)
+
+```bash
+# Enable execute command on service
+aws ecs update-service \
+  --cluster my-cluster \
+  --service my-service \
+  --enable-execute-command
+
+# Run command
+aws ecs execute-command \
+  --cluster my-cluster \
+  --task task-id \
+  --container app \
+  --interactive \
+  --command "/bin/sh"
+```
+
+## Container Instances (EC2 Launch Type)
+
+### List Container Instances
+
+```bash
+aws ecs list-container-instances --cluster my-cluster
+```
+
+### Describe Container Instances
+
+```bash
+aws ecs describe-container-instances \
+  --cluster my-cluster \
+  --container-instances instance-id-1 instance-id-2
+```
+
+### Drain Container Instance
+
+```bash
+aws ecs update-container-instances-state \
+  --cluster my-cluster \
+  --container-instances instance-id \
+  --status DRAINING
+```
+
+### Deregister Container Instance
+
+```bash
+aws ecs deregister-container-instance \
+  --cluster my-cluster \
+  --container-instance instance-id \
+  --force
+```
+
+## Capacity Providers
+
+### Create Capacity Provider
+
+```bash
+aws ecs create-capacity-provider \
+  --name my-cp \
+  --auto-scaling-group-provider '{
+    "autoScalingGroupArn": "arn:aws:autoscaling:...",
+    "managedScaling": {
+      "status": "ENABLED",
+      "targetCapacity": 80,
+      "minimumScalingStepSize": 1,
+      "maximumScalingStepSize": 10
+    },
+    "managedTerminationProtection": "ENABLED"
+  }'
+```
+
+### Update Cluster Capacity Providers
+
+```bash
+aws ecs put-cluster-capacity-providers \
+  --cluster my-cluster \
+  --capacity-providers FARGATE FARGATE_SPOT my-cp \
+  --default-capacity-provider-strategy \
+    capacityProvider=my-cp,weight=1,base=1
+```
+
+## Auto Scaling
+
+### Register Scalable Target
+
+```bash
+aws application-autoscaling register-scalable-target \
+  --service-namespace ecs \
+  --resource-id service/my-cluster/my-service \
+  --scalable-dimension ecs:service:DesiredCount \
+  --min-capacity 2 \
+  --max-capacity 20
+```
+
+### Put Scaling Policy
+
+```bash
+# Target tracking - CPU
+aws application-autoscaling put-scaling-policy \
+  --service-namespace ecs \
+  --resource-id service/my-cluster/my-service \
+  --scalable-dimension ecs:service:DesiredCount \
+  --policy-name cpu-scaling \
+  --policy-type TargetTrackingScaling \
+  --target-tracking-scaling-policy-configuration '{
+    "TargetValue": 70.0,
+    "PredefinedMetricSpecification": {
+      "PredefinedMetricType": "ECSServiceAverageCPUUtilization"
+    },
+    "ScaleOutCooldown": 60,
+    "ScaleInCooldown": 120
+  }'
+
+# Target tracking - Memory
+aws application-autoscaling put-scaling-policy \
+  --service-namespace ecs \
+  --resource-id service/my-cluster/my-service \
+  --scalable-dimension ecs:service:DesiredCount \
+  --policy-name memory-scaling \
+  --policy-type TargetTrackingScaling \
+  --target-tracking-scaling-policy-configuration '{
+    "TargetValue": 70.0,
+    "PredefinedMetricSpecification": {
+      "PredefinedMetricType": "ECSServiceAverageMemoryUtilization"
+    }
+  }'
+
+# Target tracking - ALB requests
+aws application-autoscaling put-scaling-policy \
+  --service-namespace ecs \
+  --resource-id service/my-cluster/my-service \
+  --scalable-dimension ecs:service:DesiredCount \
+  --policy-name request-scaling \
+  --policy-type TargetTrackingScaling \
+  --target-tracking-scaling-policy-configuration '{
+    "TargetValue": 1000.0,
+    "PredefinedMetricSpecification": {
+      "PredefinedMetricType": "ALBRequestCountPerTarget",
+      "ResourceLabel": "app/my-alb/1234/targetgroup/my-tg/5678"
+    }
+  }'
+```
+
+### Describe Scaling Policies
+
+```bash
+aws application-autoscaling describe-scaling-policies \
+  --service-namespace ecs \
+  --resource-id service/my-cluster/my-service
+```
+
+## Tags
+
+```bash
+# Tag cluster
+aws ecs tag-resource \
+  --resource-arn arn:aws:ecs:us-east-1:123456789012:cluster/my-cluster \
+  --tags key=Environment,value=prod
+
+# Tag service
+aws ecs tag-resource \
+  --resource-arn arn:aws:ecs:us-east-1:123456789012:service/my-cluster/my-service \
+  --tags key=Team,value=backend
+
+# List tags
+aws ecs list-tags-for-resource \
+  --resource-arn arn:aws:ecs:us-east-1:123456789012:cluster/my-cluster
+
+# Untag
+aws ecs untag-resource \
+  --resource-arn arn:aws:ecs:us-east-1:123456789012:cluster/my-cluster \
+  --tag-keys Environment
+```
+
+## Common Workflows
+
+### Deploy New Version
+
+```bash
+# Register new task definition
+NEW_TASK=$(aws ecs register-task-definition \
+  --cli-input-json file://task-definition.json \
+  --query 'taskDefinition.taskDefinitionArn' \
+  --output text)
+
+# Update service
+aws ecs update-service \
+  --cluster my-cluster \
+  --service my-service \
+  --task-definition $NEW_TASK
+
+# Wait for deployment
+aws ecs wait services-stable \
+  --cluster my-cluster \
+  --services my-service
+```
+
+### Get Task Logs
+
+```bash
+# Get task ID
+TASK_ID=$(aws ecs list-tasks \
+  --cluster my-cluster \
+  --service-name my-service \
+  --query 'taskArns[0]' \
+  --output text | cut -d'/' -f3)
+
+# Get logs
+aws logs get-log-events \
+  --log-group-name /ecs/my-app \
+  --log-stream-name "ecs/app/$TASK_ID"
+```
+
+### Force Restart All Tasks
+
+```bash
+aws ecs update-service \
+  --cluster my-cluster \
+  --service my-service \
+  --force-new-deployment
+```

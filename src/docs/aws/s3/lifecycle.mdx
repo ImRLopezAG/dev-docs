@@ -1,0 +1,595 @@
+---
+title: S3 Lifecycle Rules
+description: Automate object transitions, expirations, and cost optimization with lifecycle policies
+---
+
+S3 lifecycle rules automate object management, helping you optimize storage costs and comply with data retention policies.
+
+## Lifecycle Rules Overview
+
+<Callout type="info" title="What Lifecycle Rules Do">
+- **Transition**: Move objects between storage classes
+- **Expiration**: Delete objects after a specified time
+- **Cleanup**: Remove incomplete multipart uploads and expired delete markers
+</Callout>
+
+## Basic Lifecycle Configuration
+
+```bash title="Apply lifecycle configuration"
+aws s3api put-bucket-lifecycle-configuration \
+  --bucket my-bucket \
+  --lifecycle-configuration file://lifecycle.json
+```
+
+```bash title="Get current lifecycle configuration"
+aws s3api get-bucket-lifecycle-configuration --bucket my-bucket
+```
+
+```bash title="Delete lifecycle configuration"
+aws s3api delete-bucket-lifecycle --bucket my-bucket
+```
+
+## Rule Structure
+
+```json title="Complete lifecycle rule example"
+{
+  "Rules": [
+    {
+      "ID": "MyLifecycleRule",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "logs/"
+      },
+      "Transitions": [
+        {
+          "Days": 30,
+          "StorageClass": "STANDARD_IA"
+        }
+      ],
+      "NoncurrentVersionTransitions": [
+        {
+          "NoncurrentDays": 30,
+          "StorageClass": "GLACIER"
+        }
+      ],
+      "Expiration": {
+        "Days": 365
+      },
+      "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 90
+      },
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 7
+      }
+    }
+  ]
+}
+```
+
+## Filter Types
+
+<Tabs items={['Prefix Filter', 'Tag Filter', 'Combined Filter', 'All Objects']}>
+<Tab value="Prefix Filter">
+Apply to objects with a specific prefix:
+
+```json title="Prefix filter"
+{
+  "ID": "LogsRule",
+  "Status": "Enabled",
+  "Filter": {
+    "Prefix": "logs/"
+  },
+  "Expiration": {
+    "Days": 90
+  }
+}
+```
+</Tab>
+<Tab value="Tag Filter">
+Apply to objects with specific tags:
+
+```json title="Tag filter"
+{
+  "ID": "TempFilesRule",
+  "Status": "Enabled",
+  "Filter": {
+    "Tag": {
+      "Key": "type",
+      "Value": "temporary"
+    }
+  },
+  "Expiration": {
+    "Days": 7
+  }
+}
+```
+</Tab>
+<Tab value="Combined Filter">
+Combine prefix and tags:
+
+```json title="Combined filter"
+{
+  "ID": "CombinedRule",
+  "Status": "Enabled",
+  "Filter": {
+    "And": {
+      "Prefix": "data/",
+      "Tags": [
+        {"Key": "env", "Value": "dev"},
+        {"Key": "archive", "Value": "true"}
+      ]
+    }
+  },
+  "Transitions": [
+    {"Days": 30, "StorageClass": "GLACIER"}
+  ]
+}
+```
+</Tab>
+<Tab value="All Objects">
+Apply to all objects (empty filter):
+
+```json title="All objects filter"
+{
+  "ID": "AllObjectsRule",
+  "Status": "Enabled",
+  "Filter": {},
+  "AbortIncompleteMultipartUpload": {
+    "DaysAfterInitiation": 7
+  }
+}
+```
+
+<Callout type="warn">
+Empty filter applies to ALL objects in the bucket. Use carefully.
+</Callout>
+</Tab>
+</Tabs>
+
+## Storage Class Transitions
+
+### Transition Rules
+
+<Callout type="info" title="Transition Constraints">
+- Minimum 30 days before transitioning to IA classes
+- Minimum 90 days before transitioning to Glacier Instant
+- Transitions happen at midnight UTC
+- Small objects (under 128KB) may not transition to IA classes
+</Callout>
+
+### Transition Waterfall
+
+```json title="Progressive transition example"
+{
+  "Rules": [
+    {
+      "ID": "ProgressiveArchive",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "data/"},
+      "Transitions": [
+        {"Days": 30, "StorageClass": "STANDARD_IA"},
+        {"Days": 90, "StorageClass": "GLACIER_IR"},
+        {"Days": 180, "StorageClass": "GLACIER"},
+        {"Days": 365, "StorageClass": "DEEP_ARCHIVE"}
+      ]
+    }
+  ]
+}
+```
+
+### Supported Transitions
+
+```
+S3 Standard
+    ↓
+S3 Intelligent-Tiering
+    ↓
+S3 Standard-IA / One Zone-IA
+    ↓
+S3 Glacier Instant Retrieval
+    ↓
+S3 Glacier Flexible Retrieval
+    ↓
+S3 Glacier Deep Archive
+```
+
+<Callout type="warn">
+Objects cannot transition backwards (e.g., Glacier to Standard-IA).
+</Callout>
+
+## Object Expiration
+
+<Tabs items={['By Days', 'By Date', 'Versioned Buckets']}>
+<Tab value="By Days">
+Delete objects after N days:
+
+```json title="Expire after 90 days"
+{
+  "ID": "ExpireOldLogs",
+  "Status": "Enabled",
+  "Filter": {"Prefix": "logs/"},
+  "Expiration": {
+    "Days": 90
+  }
+}
+```
+</Tab>
+<Tab value="By Date">
+Delete objects on a specific date:
+
+```json title="Expire on specific date"
+{
+  "ID": "ProjectCleanup",
+  "Status": "Enabled",
+  "Filter": {"Prefix": "project-alpha/"},
+  "Expiration": {
+    "Date": "2024-12-31T00:00:00Z"
+  }
+}
+```
+</Tab>
+<Tab value="Versioned Buckets">
+For versioned buckets, expiration creates delete markers:
+
+```json title="Expiration with versioning"
+{
+  "ID": "VersionedExpiration",
+  "Status": "Enabled",
+  "Filter": {},
+  "Expiration": {
+    "Days": 365
+  },
+  "NoncurrentVersionExpiration": {
+    "NoncurrentDays": 90
+  },
+  "ExpiredObjectDeleteMarker": true
+}
+```
+</Tab>
+</Tabs>
+
+## Noncurrent Version Management
+
+For versioned buckets, manage old versions:
+
+<Tabs items={['Transition Versions', 'Expire Versions', 'Keep N Versions']}>
+<Tab value="Transition Versions">
+```json title="Transition old versions"
+{
+  "ID": "ArchiveOldVersions",
+  "Status": "Enabled",
+  "Filter": {},
+  "NoncurrentVersionTransitions": [
+    {
+      "NoncurrentDays": 30,
+      "StorageClass": "STANDARD_IA"
+    },
+    {
+      "NoncurrentDays": 90,
+      "StorageClass": "GLACIER"
+    }
+  ]
+}
+```
+</Tab>
+<Tab value="Expire Versions">
+```json title="Delete old versions"
+{
+  "ID": "DeleteOldVersions",
+  "Status": "Enabled",
+  "Filter": {},
+  "NoncurrentVersionExpiration": {
+    "NoncurrentDays": 90
+  }
+}
+```
+</Tab>
+<Tab value="Keep N Versions">
+Keep only the most recent N versions:
+
+```json title="Keep last 3 versions"
+{
+  "ID": "KeepRecentVersions",
+  "Status": "Enabled",
+  "Filter": {},
+  "NoncurrentVersionExpiration": {
+    "NoncurrentDays": 1,
+    "NewerNoncurrentVersions": 3
+  }
+}
+```
+
+<Callout type="info">
+This deletes noncurrent versions older than 1 day, keeping only the 3 most recent noncurrent versions.
+</Callout>
+</Tab>
+</Tabs>
+
+## Delete Markers and Multipart Uploads
+
+### Clean Up Delete Markers
+
+Remove delete markers when they're the only version remaining:
+
+```json title="Remove expired delete markers"
+{
+  "ID": "CleanupDeleteMarkers",
+  "Status": "Enabled",
+  "Filter": {},
+  "Expiration": {
+    "ExpiredObjectDeleteMarker": true
+  }
+}
+```
+
+### Abort Incomplete Multipart Uploads
+
+Clean up failed uploads to save storage:
+
+```json title="Abort incomplete uploads"
+{
+  "ID": "AbortIncompleteUploads",
+  "Status": "Enabled",
+  "Filter": {},
+  "AbortIncompleteMultipartUpload": {
+    "DaysAfterInitiation": 7
+  }
+}
+```
+
+<Callout type="warn" title="Hidden Costs">
+Incomplete multipart uploads are often overlooked. They consume storage and incur costs until cleaned up.
+</Callout>
+
+## Common Lifecycle Patterns
+
+### Log Retention
+
+```json title="Log lifecycle policy"
+{
+  "Rules": [
+    {
+      "ID": "LogRetention",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "logs/"},
+      "Transitions": [
+        {"Days": 30, "StorageClass": "STANDARD_IA"},
+        {"Days": 60, "StorageClass": "GLACIER"}
+      ],
+      "Expiration": {"Days": 365}
+    }
+  ]
+}
+```
+
+### Development Environment
+
+```json title="Dev environment cleanup"
+{
+  "Rules": [
+    {
+      "ID": "DevCleanup",
+      "Status": "Enabled",
+      "Filter": {
+        "Tag": {"Key": "env", "Value": "dev"}
+      },
+      "Expiration": {"Days": 30}
+    }
+  ]
+}
+```
+
+### Data Lake Tiering
+
+```json title="Data lake lifecycle"
+{
+  "Rules": [
+    {
+      "ID": "RawDataTiering",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "raw/"},
+      "Transitions": [
+        {"Days": 30, "StorageClass": "INTELLIGENT_TIERING"}
+      ]
+    },
+    {
+      "ID": "ProcessedDataArchive",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "processed/"},
+      "Transitions": [
+        {"Days": 90, "StorageClass": "STANDARD_IA"},
+        {"Days": 365, "StorageClass": "GLACIER"}
+      ]
+    }
+  ]
+}
+```
+
+### Compliance Archive
+
+```json title="7-year retention for compliance"
+{
+  "Rules": [
+    {
+      "ID": "ComplianceRetention",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "compliance/"},
+      "Transitions": [
+        {"Days": 90, "StorageClass": "GLACIER_IR"},
+        {"Days": 180, "StorageClass": "DEEP_ARCHIVE"}
+      ],
+      "Expiration": {"Days": 2555}
+    }
+  ]
+}
+```
+
+### Backup Management
+
+```json title="Backup lifecycle"
+{
+  "Rules": [
+    {
+      "ID": "DailyBackups",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "backups/daily/"},
+      "Expiration": {"Days": 30}
+    },
+    {
+      "ID": "WeeklyBackups",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "backups/weekly/"},
+      "Transitions": [
+        {"Days": 30, "StorageClass": "GLACIER"}
+      ],
+      "Expiration": {"Days": 90}
+    },
+    {
+      "ID": "MonthlyBackups",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "backups/monthly/"},
+      "Transitions": [
+        {"Days": 30, "StorageClass": "GLACIER"},
+        {"Days": 180, "StorageClass": "DEEP_ARCHIVE"}
+      ],
+      "Expiration": {"Days": 365}
+    }
+  ]
+}
+```
+
+## Intelligent-Tiering Configuration
+
+Configure Intelligent-Tiering archive access tiers:
+
+```bash title="Configure archive tiers"
+aws s3api put-bucket-intelligent-tiering-configuration \
+  --bucket my-bucket \
+  --id archive-config \
+  --intelligent-tiering-configuration '{
+    "Id": "archive-config",
+    "Status": "Enabled",
+    "Tierings": [
+      {
+        "Days": 90,
+        "AccessTier": "ARCHIVE_ACCESS"
+      },
+      {
+        "Days": 180,
+        "AccessTier": "DEEP_ARCHIVE_ACCESS"
+      }
+    ]
+  }'
+```
+
+## Testing Lifecycle Rules
+
+<Steps>
+<Step>
+### Enable the Rule
+Set `Status` to `Enabled` in your configuration.
+</Step>
+<Step>
+### Wait for Processing
+Lifecycle rules run once per day at midnight UTC. Wait at least 24 hours.
+</Step>
+<Step>
+### Check Object Storage Class
+```bash title="Verify storage class"
+aws s3api head-object \
+  --bucket my-bucket \
+  --key my-object.txt \
+  --query StorageClass
+```
+</Step>
+<Step>
+### Use CloudWatch Metrics
+Monitor `NumberOfObjects` and `BucketSizeBytes` by storage class.
+</Step>
+</Steps>
+
+## Lifecycle Rule Limits
+
+| Limit | Value |
+|-------|-------|
+| Maximum rules per bucket | 1,000 |
+| Maximum tags per rule | 10 |
+| Minimum transition days (to IA) | 30 |
+| Minimum size for IA transition | 128KB |
+
+## Troubleshooting
+
+<Callout type="warn" title="Common Issues">
+1. **Rules not applying**: Wait 24+ hours; rules run daily at midnight UTC
+2. **Small objects not transitioning**: Objects under 128KB may not transition to IA classes
+3. **Transition constraints**: Check minimum days between storage classes
+4. **Filter conflicts**: Multiple rules with overlapping filters can cause unexpected behavior
+</Callout>
+
+### Debug with S3 Inventory
+
+Set up inventory to track storage classes:
+
+```bash title="Create inventory configuration"
+aws s3api put-bucket-inventory-configuration \
+  --bucket my-bucket \
+  --id storage-class-inventory \
+  --inventory-configuration '{
+    "Id": "storage-class-inventory",
+    "IsEnabled": true,
+    "Destination": {
+      "S3BucketDestination": {
+        "Bucket": "arn:aws:s3:::inventory-bucket",
+        "Format": "CSV",
+        "Prefix": "inventory/"
+      }
+    },
+    "Schedule": {"Frequency": "Daily"},
+    "IncludedObjectVersions": "Current",
+    "OptionalFields": ["StorageClass", "LastModifiedDate"]
+  }'
+```
+
+## Best Practices
+
+<Callout type="info" title="Lifecycle Rule Guidelines">
+1. **Start with longer retention** - It's easier to shorten than recover deleted data
+2. **Use Intelligent-Tiering** when access patterns are unknown
+3. **Always clean up multipart uploads** - Add this rule to every bucket
+4. **Test in development first** - Validate rules before applying to production
+5. **Document your policies** - Use meaningful rule IDs
+6. **Monitor with CloudWatch** - Track storage by class
+7. **Review regularly** - Adjust rules as needs change
+8. **Consider compliance** - Some data may have mandatory retention periods
+</Callout>
+
+## Cost Estimation
+
+Estimate savings from lifecycle policies:
+
+```bash title="Get current storage by class"
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/S3 \
+  --metric-name BucketSizeBytes \
+  --dimensions Name=BucketName,Value=my-bucket Name=StorageType,Value=StandardStorage \
+  --start-time $(date -v-7d +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date +%Y-%m-%dT%H:%M:%SZ) \
+  --period 86400 \
+  --statistics Average
+```
+
+**Approximate savings by storage class (vs Standard):**
+- Standard-IA: ~40% cheaper
+- One Zone-IA: ~50% cheaper  
+- Glacier Instant: ~68% cheaper
+- Glacier Flexible: ~78% cheaper
+- Glacier Deep Archive: ~95% cheaper
+
+## Next Steps
+
+<Cards>
+  <Card title="Storage Classes" href="/docs/aws/s3/storage-classes" description="Understand storage tiers" />
+  <Card title="Versioning" href="/docs/aws/s3/versioning" description="Version management" />
+  <Card title="Security" href="/docs/aws/s3/security" description="Access control" />
+  <Card title="S3 CLI Reference" href="/docs/aws/s3/cli" description="Complete CLI commands" />
+</Cards>

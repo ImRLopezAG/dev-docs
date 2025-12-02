@@ -1,0 +1,355 @@
+---
+title: IAM Roles
+description: Delegate access with temporary security credentials
+---
+
+An **IAM role** is an identity with permission policies that can be assumed by trusted entities. Unlike users, roles don't have permanent credentials—they provide temporary security credentials.
+
+<Callout type="info" title="Roles vs Users">
+Use roles when you need temporary credentials or when multiple entities need the same permissions. Roles are essential for AWS services, cross-account access, and federated users.
+</Callout>
+
+## Role Components
+
+### Trust Policy
+
+Defines **who** can assume the role:
+
+```json title="trust-policy.json"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+### Permission Policy
+
+Defines **what** the role can do:
+
+```json title="permission-policy.json"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/*"
+    }
+  ]
+}
+```
+
+## Types of Roles
+
+<Tabs items={['Service Roles', 'Cross-Account', 'Identity Federation', 'Service-Linked']}>
+<Tab value="Service Roles">
+Allow AWS services to perform actions on your behalf.
+
+**Common Use Cases:**
+- EC2 instances accessing S3
+- Lambda functions accessing DynamoDB
+- ECS tasks accessing Secrets Manager
+
+```json title="EC2 Trust Policy"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+</Tab>
+<Tab value="Cross-Account">
+Allow users or roles from other AWS accounts to access your resources.
+
+```json title="Cross-Account Trust Policy"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::987654321098:root"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "StringEquals": {
+          "sts:ExternalId": "unique-external-id"
+        }
+      }
+    }
+  ]
+}
+```
+
+<Callout type="warn">
+Always use an External ID for third-party cross-account access to prevent the "confused deputy" problem.
+</Callout>
+</Tab>
+<Tab value="Identity Federation">
+Allow users from external identity providers (SAML, OIDC) to assume roles.
+
+```json title="OIDC Federation Trust Policy"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:myorg/myrepo:*"
+        }
+      }
+    }
+  ]
+}
+```
+</Tab>
+<Tab value="Service-Linked">
+Pre-defined roles created by AWS services with all necessary permissions.
+
+```bash title="List Service-Linked Roles"
+aws iam list-roles --query 'Roles[?starts_with(RoleName, `AWSServiceRoleFor`)].[RoleName]' --output table
+```
+
+Examples:
+- `AWSServiceRoleForElasticLoadBalancing`
+- `AWSServiceRoleForAutoScaling`
+- `AWSServiceRoleForRDS`
+</Tab>
+</Tabs>
+
+## Creating Roles
+
+<Steps>
+<Step>
+### Create Trust Policy File
+
+```json title="trust-policy.json"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+</Step>
+<Step>
+### Create the Role
+
+```bash title="Create Role"
+aws iam create-role \
+  --role-name LambdaExecutionRole \
+  --assume-role-policy-document file://trust-policy.json \
+  --description "Execution role for Lambda functions"
+```
+</Step>
+<Step>
+### Attach Permission Policies
+
+```bash title="Attach Policy"
+# Attach AWS managed policy
+aws iam attach-role-policy \
+  --role-name LambdaExecutionRole \
+  --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+# Or attach custom policy
+aws iam put-role-policy \
+  --role-name LambdaExecutionRole \
+  --policy-name S3Access \
+  --policy-document file://s3-policy.json
+```
+</Step>
+</Steps>
+
+## Assuming Roles
+
+### Using AWS CLI
+
+```bash title="Assume Role"
+aws sts assume-role \
+  --role-arn arn:aws:iam::123456789012:role/AdminRole \
+  --role-session-name my-session \
+  --duration-seconds 3600
+```
+
+Response:
+```json title="Temporary Credentials"
+{
+    "Credentials": {
+        "AccessKeyId": "ASIAEXAMPLEID",
+        "SecretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYzEXAMPLEKEY",
+        "SessionToken": "FwoGZXIvYXdzEB...",
+        "Expiration": "2024-01-15T12:30:00Z"
+    },
+    "AssumedRoleUser": {
+        "AssumedRoleId": "AROAEXAMPLEID:my-session",
+        "Arn": "arn:aws:sts::123456789012:assumed-role/AdminRole/my-session"
+    }
+}
+```
+
+### Using AWS SDK (Node.js)
+
+```javascript title="assume-role.js"
+import { STSClient, AssumeRoleCommand } from "@aws-sdk/client-sts";
+import { S3Client, ListBucketsCommand } from "@aws-sdk/client-s3";
+
+const stsClient = new STSClient({ region: "us-east-1" });
+
+const assumeRole = async () => {
+  const command = new AssumeRoleCommand({
+    RoleArn: "arn:aws:iam::123456789012:role/AdminRole",
+    RoleSessionName: "my-session",
+    DurationSeconds: 3600,
+  });
+
+  const response = await stsClient.send(command);
+  
+  // Use temporary credentials
+  const s3Client = new S3Client({
+    region: "us-east-1",
+    credentials: {
+      accessKeyId: response.Credentials.AccessKeyId,
+      secretAccessKey: response.Credentials.SecretAccessKey,
+      sessionToken: response.Credentials.SessionToken,
+    },
+  });
+
+  return s3Client;
+};
+```
+
+### Using AWS Profiles
+
+Configure role assumption in `~/.aws/config`:
+
+```ini title="~/.aws/config"
+[profile admin]
+role_arn = arn:aws:iam::123456789012:role/AdminRole
+source_profile = default
+region = us-east-1
+
+[profile admin-mfa]
+role_arn = arn:aws:iam::123456789012:role/AdminRole
+source_profile = default
+mfa_serial = arn:aws:iam::123456789012:mfa/user
+```
+
+```bash title="Use Profile"
+aws s3 ls --profile admin
+```
+
+## Role Session Duration
+
+| Role Type | Default | Maximum |
+|-----------|---------|---------|
+| **IAM User assuming role** | 1 hour | 12 hours |
+| **AWS Service** | 1 hour | 12 hours |
+| **SAML Federation** | 1 hour | 12 hours |
+| **OIDC Federation** | 1 hour | 12 hours |
+
+```bash title="Set Max Session Duration"
+aws iam update-role \
+  --role-name AdminRole \
+  --max-session-duration 43200  # 12 hours
+```
+
+## Role Chaining
+
+Assume one role, then assume another:
+
+```bash title="Role Chaining"
+# First, assume RoleA
+aws sts assume-role \
+  --role-arn arn:aws:iam::111111111111:role/RoleA \
+  --role-session-name session1
+
+# Then, using RoleA credentials, assume RoleB
+aws sts assume-role \
+  --role-arn arn:aws:iam::222222222222:role/RoleB \
+  --role-session-name session2
+```
+
+<Callout type="warn">
+Role chaining has a maximum session duration of 1 hour, regardless of the individual role settings.
+</Callout>
+
+## Instance Profiles
+
+For EC2 instances to use roles, you need an instance profile:
+
+```bash title="Create Instance Profile"
+# Create instance profile
+aws iam create-instance-profile \
+  --instance-profile-name EC2-S3-Access
+
+# Add role to instance profile
+aws iam add-role-to-instance-profile \
+  --instance-profile-name EC2-S3-Access \
+  --role-name EC2-S3-Role
+
+# Attach to EC2 instance
+aws ec2 associate-iam-instance-profile \
+  --instance-id i-1234567890abcdef0 \
+  --iam-instance-profile Name=EC2-S3-Access
+```
+
+## Best Practices
+
+<Callout type="info" title="Role Best Practices">
+1. **Use roles for AWS services** - Never embed credentials in code
+2. **Use external IDs** - For third-party cross-account access
+3. **Limit session duration** - Use shortest practical duration
+4. **Apply least privilege** - Only grant necessary permissions
+5. **Use conditions** - Add constraints like source IP or MFA
+6. **Enable CloudTrail** - Log all AssumeRole calls
+</Callout>
+
+## Troubleshooting
+
+### Common Errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `AccessDenied` | Missing trust policy | Add principal to trust policy |
+| `InvalidIdentityToken` | Token expired | Get new federation token |
+| `MalformedPolicyDocument` | Invalid JSON | Validate policy syntax |
+| `PackedPolicyTooLarge` | Session policy too big | Reduce policy size |
+
+## Next Steps
+
+<Cards>
+  <Card title="IAM Policies" href="/docs/aws/iam/policies" description="Define permissions with JSON documents" />
+  <Card title="IAM Best Practices" href="/docs/aws/iam/best-practices" description="Security recommendations" />
+</Cards>

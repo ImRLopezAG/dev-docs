@@ -1,0 +1,300 @@
+---
+title: AWS Lambda
+description: Run code without thinking about servers
+---
+
+AWS Lambda lets you run code without provisioning or managing servers. You pay only for the compute time you consume.
+
+<Callout type="info" title="Serverless Computing">
+Lambda automatically scales, from a few requests per day to thousands per second. You never pay for idle capacity.
+</Callout>
+
+## Key Concepts
+
+### Functions
+The core unit of Lambda. Contains your code and configuration.
+
+### Triggers
+Events that invoke your function:
+- API Gateway HTTP requests
+- S3 bucket events
+- DynamoDB streams
+- CloudWatch Events/EventBridge
+- SQS messages
+- SNS notifications
+
+### Layers
+Reusable code packages shared across functions.
+
+### Execution Environment
+Isolated runtime environment with:
+- Memory: 128 MB to 10,240 MB
+- Timeout: Up to 15 minutes
+- Ephemeral storage: Up to 10 GB
+
+## Supported Runtimes
+
+| Runtime | Versions |
+|---------|----------|
+| Node.js | 18.x, 20.x |
+| Python | 3.9, 3.10, 3.11, 3.12 |
+| Java | 11, 17, 21 |
+| .NET | 6, 8 |
+| Go | 1.x (provided.al2) |
+| Ruby | 3.2 |
+| Custom | provided.al2, provided.al2023 |
+
+## Function Structure
+
+<Tabs items={['Node.js', 'Python', 'Go']}>
+<Tab value="Node.js">
+```javascript title="handler.js"
+export const handler = async (event, context) => {
+  console.log('Event:', JSON.stringify(event, null, 2));
+  
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      message: 'Hello from Lambda!',
+      requestId: context.awsRequestId
+    })
+  };
+};
+```
+</Tab>
+<Tab value="Python">
+```python title="handler.py"
+import json
+
+def handler(event, context):
+    print(f"Event: {json.dumps(event)}")
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps({
+            'message': 'Hello from Lambda!',
+            'requestId': context.aws_request_id
+        })
+    }
+```
+</Tab>
+<Tab value="Go">
+```go title="main.go"
+package main
+
+import (
+	"context"
+	"github.com/aws/aws-lambda-go/lambda"
+)
+
+type Response struct {
+	Message string `json:"message"`
+}
+
+func handler(ctx context.Context) (Response, error) {
+	return Response{Message: "Hello from Lambda!"}, nil
+}
+
+func main() {
+	lambda.Start(handler)
+}
+```
+</Tab>
+</Tabs>
+
+## Event Sources
+
+<Tabs items={['API Gateway', 'S3', 'SQS']}>
+<Tab value="API Gateway">
+```json title="API Gateway Event"
+{
+  "httpMethod": "POST",
+  "path": "/users",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\"name\": \"John\"}"
+}
+```
+</Tab>
+<Tab value="S3">
+```json title="S3 Event"
+{
+  "Records": [
+    {
+      "eventName": "ObjectCreated:Put",
+      "s3": {
+        "bucket": {"name": "my-bucket"},
+        "object": {"key": "uploads/file.txt"}
+      }
+    }
+  ]
+}
+```
+</Tab>
+<Tab value="SQS">
+```json title="SQS Event"
+{
+  "Records": [
+    {
+      "messageId": "msg-123",
+      "body": "{\"action\": \"process\"}",
+      "attributes": {
+        "ApproximateReceiveCount": "1"
+      }
+    }
+  ]
+}
+```
+</Tab>
+</Tabs>
+
+## Environment Variables
+
+Access configuration without hardcoding:
+
+```javascript title="Using Environment Variables"
+const tableName = process.env.TABLE_NAME;
+const apiKey = process.env.API_KEY;
+```
+
+<Callout type="warn" title="Security">
+Use AWS Secrets Manager or Parameter Store for sensitive values like API keys and database credentials.
+</Callout>
+
+## VPC Configuration
+
+Connect Lambda to resources in your VPC:
+
+```json title="VPC Configuration"
+{
+  "VpcConfig": {
+    "SubnetIds": ["subnet-123", "subnet-456"],
+    "SecurityGroupIds": ["sg-789"]
+  }
+}
+```
+
+<Callout type="info" title="VPC Considerations">
+- Adds cold start latency (~1-2 seconds)
+- Requires NAT Gateway for internet access
+- Use VPC endpoints for AWS services (S3, DynamoDB, etc.)
+</Callout>
+
+## Layers
+
+Share code and dependencies across functions:
+
+```bash title="Create Layer"
+aws lambda publish-layer-version \
+  --layer-name my-dependencies \
+  --zip-file fileb://layer.zip \
+  --compatible-runtimes nodejs18.x nodejs20.x
+```
+
+Layer structure:
+```text title="Layer Directory Structure"
+layer.zip
+└── nodejs/
+    └── node_modules/
+        └── ... dependencies
+```
+
+## Concurrency
+
+### Reserved Concurrency
+Guarantee capacity for critical functions.
+
+### Provisioned Concurrency
+Pre-initialized execution environments to eliminate cold starts.
+
+```bash title="Set Provisioned Concurrency"
+aws lambda put-provisioned-concurrency-config \
+  --function-name my-function \
+  --qualifier prod \
+  --provisioned-concurrent-executions 100
+```
+
+<Callout type="info">
+Provisioned concurrency is billed even when not in use. Use it strategically for latency-sensitive applications.
+</Callout>
+
+## Error Handling
+
+### Dead Letter Queues
+
+Send failed async invocations to SQS or SNS:
+
+```bash title="Configure DLQ"
+aws lambda update-function-configuration \
+  --function-name my-function \
+  --dead-letter-config TargetArn=arn:aws:sqs:us-east-1:123456789012:dlq
+```
+
+### Retry Behavior
+
+| Invocation Type | Retries |
+|-----------------|---------|
+| Synchronous | Caller handles |
+| Asynchronous | 2 retries |
+| Event source | Depends on source |
+
+<Callout type="warn">
+Always implement idempotency in your functions since retries may cause duplicate executions.
+</Callout>
+
+## Best Practices
+
+<Steps>
+<Step>
+### Performance
+1. Minimize cold starts with provisioned concurrency
+2. Keep deployment packages small
+3. Use layers for dependencies
+4. Reuse connections outside handler
+</Step>
+<Step>
+### Security
+1. Use IAM roles with least privilege
+2. Store secrets in Secrets Manager
+3. Enable VPC for private resources
+4. Use reserved concurrency for rate limiting
+</Step>
+<Step>
+### Cost Optimization
+1. Right-size memory allocation
+2. Use Graviton2 (ARM) for up to 34% cost savings
+3. Optimize code for faster execution
+4. Use provisioned concurrency only when needed
+</Step>
+</Steps>
+
+## Monitoring
+
+### CloudWatch Metrics
+- **Invocations** - Number of times function was invoked
+- **Duration** - Execution time in milliseconds
+- **Errors** - Invocations that resulted in errors
+- **Throttles** - Invocations that were throttled
+- **ConcurrentExecutions** - Number of concurrent executions
+
+### X-Ray Tracing
+
+Enable active tracing for distributed tracing:
+
+```bash title="Enable X-Ray"
+aws lambda update-function-configuration \
+  --function-name my-function \
+  --tracing-config Mode=Active
+```
+
+<Callout type="info">
+X-Ray helps identify performance bottlenecks and errors across distributed applications.
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="Lambda CLI Reference" href="/docs/aws/lambda/cli" description="Complete CLI commands for Lambda" />
+  <Card title="DynamoDB" href="/docs/aws/dynamodb" description="NoSQL database" />
+</Cards>

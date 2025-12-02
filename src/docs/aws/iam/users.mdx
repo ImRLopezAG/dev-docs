@@ -1,0 +1,241 @@
+---
+title: IAM Users
+description: Create and manage individual identities for people and applications
+---
+
+An **IAM user** is an identity within your AWS account that has specific permissions. Users represent people or applications that need to interact with AWS resources.
+
+<Callout type="info" title="When to Use IAM Users">
+Use IAM users for long-term credentials when you need individual identities for team members or service accounts. For temporary access, prefer IAM roles.
+</Callout>
+
+## User Components
+
+### User Credentials
+
+Each IAM user can have multiple types of credentials:
+
+| Credential Type | Use Case | Best Practice |
+|-----------------|----------|---------------|
+| **Console Password** | AWS Management Console access | Enable MFA, enforce strong passwords |
+| **Access Keys** | AWS CLI and SDK access | Rotate regularly, never share |
+| **SSH Keys** | CodeCommit access | Use per-user keys |
+| **HTTPS Git Credentials** | CodeCommit HTTPS access | Generate through IAM console |
+
+### Access Keys
+
+Access keys consist of two parts:
+- **Access Key ID** - Public identifier (e.g., `AKIAIOSFODNN7EXAMPLE`)
+- **Secret Access Key** - Private key (only shown once at creation)
+
+```bash title="Create Access Key"
+aws iam create-access-key --user-name developer
+
+# Output
+{
+    "AccessKey": {
+        "UserName": "developer",
+        "AccessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "Status": "Active",
+        "SecretAccessKey": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    }
+}
+```
+
+<Callout type="error" title="Security Warning">
+Never commit access keys to version control. Store them securely in environment variables or AWS credentials file.
+</Callout>
+
+## Creating Users
+
+<Steps>
+<Step>
+### Create the User
+
+```bash title="Create User"
+aws iam create-user --user-name developer
+```
+
+Response:
+```json title="Response"
+{
+    "User": {
+        "UserName": "developer",
+        "UserId": "AIDAEXAMPLEID",
+        "Arn": "arn:aws:iam::123456789012:user/developer",
+        "Path": "/",
+        "CreateDate": "2024-01-15T10:30:00Z"
+    }
+}
+```
+</Step>
+<Step>
+### Add to a Group
+
+```bash title="Add to Group"
+aws iam add-user-to-group \
+  --user-name developer \
+  --group-name Developers
+```
+</Step>
+<Step>
+### Create Console Password (Optional)
+
+```bash title="Create Login Profile"
+aws iam create-login-profile \
+  --user-name developer \
+  --password "TempPassword123!" \
+  --password-reset-required
+```
+</Step>
+<Step>
+### Enable MFA
+
+```bash title="Enable Virtual MFA"
+# Create virtual MFA device
+aws iam create-virtual-mfa-device \
+  --virtual-mfa-device-name developer-mfa \
+  --outfile /tmp/qrcode.png \
+  --bootstrap-method QRCodePNG
+
+# Enable MFA for user
+aws iam enable-mfa-device \
+  --user-name developer \
+  --serial-number arn:aws:iam::123456789012:mfa/developer-mfa \
+  --authentication-code1 123456 \
+  --authentication-code2 789012
+```
+</Step>
+</Steps>
+
+## User Paths
+
+Organize users with paths for easier management:
+
+```bash title="Create User with Path"
+aws iam create-user \
+  --user-name developer \
+  --path /engineering/backend/
+```
+
+Paths help with:
+- Organizing users by department or team
+- Applying policies to groups of users
+- Setting up permission boundaries
+
+```bash title="List Users by Path"
+aws iam list-users --path-prefix /engineering/
+```
+
+## Permission Boundaries
+
+Limit the maximum permissions a user can have:
+
+```bash title="Set Permission Boundary"
+aws iam put-user-permissions-boundary \
+  --user-name developer \
+  --permissions-boundary arn:aws:iam::123456789012:policy/DeveloperBoundary
+```
+
+<Callout type="info">
+Permission boundaries define the maximum permissions. The effective permissions are the intersection of identity-based policies and the permission boundary.
+</Callout>
+
+## Managing User Credentials
+
+### Rotate Access Keys
+
+<Steps>
+<Step>
+### Create New Access Key
+
+```bash title="Create New Key"
+aws iam create-access-key --user-name developer
+```
+</Step>
+<Step>
+### Update Applications
+
+Update all applications to use the new access key.
+</Step>
+<Step>
+### Deactivate Old Key
+
+```bash title="Deactivate Old Key"
+aws iam update-access-key \
+  --user-name developer \
+  --access-key-id AKIAIOSFODNN7EXAMPLE \
+  --status Inactive
+```
+</Step>
+<Step>
+### Delete Old Key
+
+After confirming everything works:
+
+```bash title="Delete Old Key"
+aws iam delete-access-key \
+  --user-name developer \
+  --access-key-id AKIAIOSFODNN7EXAMPLE
+```
+</Step>
+</Steps>
+
+### Password Policy
+
+Configure account-wide password requirements:
+
+```bash title="Set Password Policy"
+aws iam update-account-password-policy \
+  --minimum-password-length 14 \
+  --require-symbols \
+  --require-numbers \
+  --require-uppercase-characters \
+  --require-lowercase-characters \
+  --allow-users-to-change-password \
+  --max-password-age 90 \
+  --password-reuse-prevention 24
+```
+
+## User Tags
+
+Add metadata to users for organization and cost allocation:
+
+```bash title="Tag User"
+aws iam tag-user \
+  --user-name developer \
+  --tags Key=Department,Value=Engineering Key=CostCenter,Value=12345
+```
+
+## Best Practices
+
+<Callout type="warn" title="Security Best Practices">
+1. **Never use root account** - Create IAM users instead
+2. **Enable MFA** - Especially for privileged users
+3. **Use groups** - Assign permissions via groups, not directly to users
+4. **Rotate credentials** - Regularly rotate access keys
+5. **Apply least privilege** - Grant only necessary permissions
+6. **Use roles for applications** - EC2 instances and Lambda should use roles, not user credentials
+</Callout>
+
+## Auditing User Activity
+
+### Check Last Used Credentials
+
+```bash title="Get Credential Report"
+aws iam generate-credential-report
+aws iam get-credential-report --output text --query Content | base64 -d
+```
+
+### List Access Keys with Last Used
+
+```bash title="Access Key Last Used"
+aws iam get-access-key-last-used --access-key-id AKIAIOSFODNN7EXAMPLE
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="IAM Roles" href="/docs/aws/iam/roles" description="Temporary credentials for services and cross-account access" />
+  <Card title="IAM Policies" href="/docs/aws/iam/policies" description="Define permissions with JSON documents" />
+</Cards>

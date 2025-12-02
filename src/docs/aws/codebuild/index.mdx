@@ -1,0 +1,412 @@
+---
+title: AWS CodeBuild
+description: Fully managed build service to compile, test, and produce software packages
+---
+
+AWS CodeBuild is a fully managed continuous integration service that compiles source code, runs tests, and produces deployable software packages.
+
+## Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Fully Managed** | No build servers to manage |
+| **Scalable** | Concurrent builds automatically |
+| **Pay-per-minute** | Only pay for build time |
+| **Pre-configured Environments** | Docker images for common languages |
+| **Custom Environments** | Use your own Docker images |
+| **VPC Support** | Access private resources |
+
+## Build Process
+
+```
+Source → Build Environment → Build Commands → Artifacts
+```
+
+1. Fetch source code (CodeCommit, GitHub, S3, etc.)
+2. Provision build environment (Docker container)
+3. Execute buildspec commands
+4. Upload artifacts to S3
+
+## Buildspec File
+
+### Basic Structure
+
+```yaml
+version: 0.2
+
+env:
+  variables:
+    NODE_ENV: "production"
+  parameter-store:
+    DB_PASSWORD: "/myapp/db-password"
+  secrets-manager:
+    API_KEY: "myapp/api-key:API_KEY"
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - npm ci
+
+  pre_build:
+    commands:
+      - echo "Running tests..."
+      - npm test
+
+  build:
+    commands:
+      - echo "Building..."
+      - npm run build
+
+  post_build:
+    commands:
+      - echo "Build completed on $(date)"
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: dist
+  discard-paths: no
+
+cache:
+  paths:
+    - 'node_modules/**/*'
+
+reports:
+  jest-reports:
+    files:
+      - 'coverage/clover.xml'
+    file-format: CLOVERXML
+```
+
+### Build Phases
+
+| Phase | Description | Runs On Failure |
+|-------|-------------|-----------------|
+| `install` | Install dependencies | No |
+| `pre_build` | Pre-build commands | No |
+| `build` | Build commands | No |
+| `post_build` | Post-build cleanup | Yes |
+
+### Environment Variables
+
+```yaml
+env:
+  # Plain text
+  variables:
+    ENVIRONMENT: "production"
+    LOG_LEVEL: "info"
+  
+  # From Parameter Store
+  parameter-store:
+    DB_HOST: "/myapp/db-host"
+    DB_NAME: "/myapp/db-name"
+  
+  # From Secrets Manager
+  secrets-manager:
+    DB_PASSWORD: "prod/db:password"
+    API_KEY: "prod/api:key"
+  
+  # Exported to other builds
+  exported-variables:
+    - BUILD_ID
+    - COMMIT_SHA
+```
+
+### Built-in Variables
+
+| Variable | Description |
+|----------|-------------|
+| `CODEBUILD_BUILD_ID` | Unique build ID |
+| `CODEBUILD_BUILD_NUMBER` | Build number |
+| `CODEBUILD_SOURCE_VERSION` | Git commit SHA |
+| `CODEBUILD_RESOLVED_SOURCE_VERSION` | Resolved commit |
+| `CODEBUILD_SRC_DIR` | Source directory |
+| `CODEBUILD_BUILD_ARN` | Build ARN |
+| `CODEBUILD_INITIATOR` | Who started the build |
+
+## Build Environments
+
+### Managed Images
+
+| Runtime | Image |
+|---------|-------|
+| Standard (x86) | `aws/codebuild/standard:7.0` |
+| Amazon Linux 2023 | `aws/codebuild/amazonlinux2-x86_64-standard:5.0` |
+| ARM | `aws/codebuild/amazonlinux2-aarch64-standard:3.0` |
+
+### Compute Types
+
+| Type | vCPU | Memory | Description |
+|------|------|--------|-------------|
+| BUILD_GENERAL1_SMALL | 3 | 4 GB | Small projects |
+| BUILD_GENERAL1_MEDIUM | 7 | 15 GB | Medium projects |
+| BUILD_GENERAL1_LARGE | 15 | 145 GB | Large projects |
+| BUILD_GENERAL1_2XLARGE | 145 | 255 GB | Very large projects |
+| BUILD_LAMBDA_1GB | 1 | 1 GB | Lambda compute |
+| BUILD_LAMBDA_10GB | 8 | 10 GB | Lambda compute |
+
+### Custom Docker Image
+
+```yaml
+# buildspec.yml for custom image
+version: 0.2
+
+phases:
+  build:
+    commands:
+      - docker build -t my-custom-build .
+```
+
+Project configuration:
+```json
+{
+  "environment": {
+    "type": "LINUX_CONTAINER",
+    "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/my-build-image:latest",
+    "computeType": "BUILD_GENERAL1_MEDIUM",
+    "imagePullCredentialsType": "SERVICE_ROLE"
+  }
+}
+```
+
+## Source Providers
+
+| Provider | Trigger | Webhook |
+|----------|---------|---------|
+| GitHub | Yes | Yes |
+| GitHub Enterprise | Yes | Yes |
+| Bitbucket | Yes | Yes |
+| CodeCommit | Yes | Via EventBridge |
+| S3 | Manual | Via EventBridge |
+
+### GitHub Integration
+
+```bash
+aws codebuild create-webhook \
+  --project-name my-project \
+  --filter-groups '[[
+    {"type": "EVENT", "pattern": "PUSH"},
+    {"type": "HEAD_REF", "pattern": "^refs/heads/main$"}
+  ]]'
+```
+
+## Docker Builds
+
+### Build and Push to ECR
+
+```yaml
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=${COMMIT_HASH:-latest}
+
+  build:
+    commands:
+      - docker build -t $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG .
+      - docker tag $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG $ECR_REGISTRY/$IMAGE_NAME:latest
+
+  post_build:
+    commands:
+      - docker push $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
+      - docker push $ECR_REGISTRY/$IMAGE_NAME:latest
+      - echo "[{\"name\":\"app\",\"imageUri\":\"$ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG\"}]" > imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
+```
+
+### Enable Docker Layer Caching
+
+```json
+{
+  "cache": {
+    "type": "LOCAL",
+    "modes": ["LOCAL_DOCKER_LAYER_CACHE"]
+  }
+}
+```
+
+## Artifacts
+
+### S3 Artifacts
+
+```yaml
+artifacts:
+  files:
+    - '**/*'
+  base-directory: dist
+  name: build-$(CODEBUILD_BUILD_NUMBER)
+  discard-paths: no
+
+secondary-artifacts:
+  reports:
+    files:
+      - 'coverage/**/*'
+    base-directory: .
+    name: coverage-report
+```
+
+### Multiple Artifacts
+
+```yaml
+artifacts:
+  secondary-artifacts:
+    frontend:
+      files:
+        - '**/*'
+      base-directory: frontend/build
+    backend:
+      files:
+        - '**/*'
+      base-directory: backend/dist
+```
+
+## Caching
+
+### S3 Cache
+
+```yaml
+cache:
+  paths:
+    - 'node_modules/**/*'
+    - '.npm/**/*'
+```
+
+### Local Cache (Faster)
+
+```json
+{
+  "cache": {
+    "type": "LOCAL",
+    "modes": [
+      "LOCAL_SOURCE_CACHE",
+      "LOCAL_DOCKER_LAYER_CACHE",
+      "LOCAL_CUSTOM_CACHE"
+    ]
+  }
+}
+```
+
+## Reports
+
+### Test Reports
+
+```yaml
+reports:
+  jest-reports:
+    files:
+      - 'junit.xml'
+    base-directory: coverage
+    file-format: JUNITXML
+
+  coverage-reports:
+    files:
+      - 'cobertura-coverage.xml'
+    base-directory: coverage
+    file-format: COBERTURAXML
+```
+
+### Supported Formats
+
+| Type | Formats |
+|------|---------|
+| Test | JUnit, NUnit, Cucumber, TestNG, Visual Studio TRX |
+| Coverage | Cobertura, JaCoCo, Clover, SimpleCov |
+
+## VPC Access
+
+Access private resources during build:
+
+```json
+{
+  "vpcConfig": {
+    "vpcId": "vpc-abc123",
+    "subnets": ["subnet-123", "subnet-456"],
+    "securityGroupIds": ["sg-abc123"]
+  }
+}
+```
+
+## Batch Builds
+
+Run multiple builds in parallel:
+
+```yaml
+version: 0.2
+
+batch:
+  fast-fail: false
+  build-list:
+    - identifier: linux_build
+      env:
+        variables:
+          PLATFORM: linux
+    - identifier: windows_build
+      env:
+        variables:
+          PLATFORM: windows
+    - identifier: integration_tests
+      depend-on:
+        - linux_build
+        - windows_build
+```
+
+## Build Matrix
+
+```yaml
+batch:
+  build-matrix:
+    static:
+      env:
+        type: LINUX_CONTAINER
+    dynamic:
+      env:
+        variables:
+          NODE_VERSION:
+            - "16"
+            - "18"
+            - "20"
+          OS:
+            - "ubuntu"
+            - "alpine"
+```
+
+## Best Practices
+
+### Security
+1. Use secrets manager for credentials
+2. Enable build logs encryption
+3. Use VPC for private resource access
+4. Grant least-privilege IAM permissions
+
+### Performance
+1. Enable local caching
+2. Use Docker layer caching
+3. Cache dependencies (node_modules, etc.)
+4. Use appropriate compute type
+
+### Cost
+1. Use Lambda compute for small builds
+2. Enable S3 caching to speed up builds
+3. Optimize buildspec to reduce build time
+4. Use batch builds for parallel work
+
+### Reliability
+1. Use specific runtime versions
+2. Pin dependency versions
+3. Implement retry logic for flaky tests
+4. Set appropriate timeout
+
+## Next Steps
+
+<Cards>
+  <Card title="CodeBuild CLI Reference" href="/docs/aws/codebuild/cli" description="Complete CLI commands" />
+  <Card title="CodePipeline" href="/docs/aws/codepipeline" description="CI/CD Pipeline Service" />
+</Cards>

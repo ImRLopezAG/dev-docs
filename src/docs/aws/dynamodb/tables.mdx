@@ -1,0 +1,406 @@
+---
+title: DynamoDB Tables
+description: Complete guide to DynamoDB table design, creation, and management
+---
+
+DynamoDB tables are the fundamental building blocks for storing data. Understanding table design is crucial for building performant and cost-effective applications.
+
+## Table Fundamentals
+
+<Callout type="info" title="Key Concepts">
+- **Table**: Container for items (similar to rows in SQL)
+- **Item**: A single data record with attributes
+- **Attribute**: A data element (similar to columns)
+- **Primary Key**: Unique identifier for each item
+</Callout>
+
+## Primary Keys
+
+Every table requires a primary key, which can be:
+
+<Tabs items={['Partition Key', 'Composite Key']}>
+<Tab value="Partition Key">
+Simple primary key using only a partition key:
+
+```bash title="Create table with partition key"
+aws dynamodb create-table \
+  --table-name Users \
+  --attribute-definitions \
+    AttributeName=userId,AttributeType=S \
+  --key-schema \
+    AttributeName=userId,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST
+```
+
+| Attribute | Key Type | Description |
+|-----------|----------|-------------|
+| `userId` | HASH (Partition) | Distributes data across partitions |
+
+**Use when:**
+- Each item has a unique identifier
+- You always query by that identifier
+- No need for range queries
+</Tab>
+<Tab value="Composite Key">
+Composite primary key using partition key + sort key:
+
+```bash title="Create table with composite key"
+aws dynamodb create-table \
+  --table-name Orders \
+  --attribute-definitions \
+    AttributeName=customerId,AttributeType=S \
+    AttributeName=orderDate,AttributeType=S \
+  --key-schema \
+    AttributeName=customerId,KeyType=HASH \
+    AttributeName=orderDate,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST
+```
+
+| Attribute | Key Type | Description |
+|-----------|----------|-------------|
+| `customerId` | HASH (Partition) | Groups items by customer |
+| `orderDate` | RANGE (Sort) | Orders items within partition |
+
+**Use when:**
+- Multiple items share the same partition key
+- You need to query ranges (dates, IDs, etc.)
+- Hierarchical data (parent-child relationships)
+</Tab>
+</Tabs>
+
+## Attribute Types
+
+| Type Code | Type | Example |
+|-----------|------|---------|
+| S | String | `"hello"` |
+| N | Number | `123`, `3.14` |
+| B | Binary | Base64-encoded |
+| BOOL | Boolean | `true`, `false` |
+| NULL | Null | `null` |
+| L | List | `["a", 1, true]` |
+| M | Map | `{"key": "value"}` |
+| SS | String Set | `["a", "b", "c"]` |
+| NS | Number Set | `[1, 2, 3]` |
+| BS | Binary Set | Binary values |
+
+<Callout type="info">
+Only partition key and sort key attributes need to be defined in `AttributeDefinitions`. Other attributes are schemaless.
+</Callout>
+
+## Creating Tables
+
+<Tabs items={['On-Demand', 'Provisioned', 'With Encryption']}>
+<Tab value="On-Demand">
+```bash title="On-demand capacity"
+aws dynamodb create-table \
+  --table-name Products \
+  --attribute-definitions \
+    AttributeName=productId,AttributeType=S \
+  --key-schema \
+    AttributeName=productId,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST \
+  --tags Key=Environment,Value=Production
+```
+
+**Benefits:**
+- Pay per request
+- Automatic scaling
+- No capacity planning
+- Great for unpredictable workloads
+</Tab>
+<Tab value="Provisioned">
+```bash title="Provisioned capacity"
+aws dynamodb create-table \
+  --table-name Products \
+  --attribute-definitions \
+    AttributeName=productId,AttributeType=S \
+  --key-schema \
+    AttributeName=productId,KeyType=HASH \
+  --billing-mode PROVISIONED \
+  --provisioned-throughput \
+    ReadCapacityUnits=10,WriteCapacityUnits=5
+```
+
+**Benefits:**
+- Predictable costs
+- Reserved capacity discounts
+- Better for steady workloads
+
+<Callout type="info">
+1 RCU = 1 strongly consistent read (4KB) per second
+1 WCU = 1 write (1KB) per second
+</Callout>
+</Tab>
+<Tab value="With Encryption">
+```bash title="Server-side encryption"
+aws dynamodb create-table \
+  --table-name SecureTable \
+  --attribute-definitions \
+    AttributeName=id,AttributeType=S \
+  --key-schema \
+    AttributeName=id,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST \
+  --sse-specification \
+    Enabled=true,SSEType=KMS,KMSMasterKeyId=alias/my-key
+```
+
+Encryption options:
+- **AWS owned key** (default, free)
+- **AWS managed key** (aws/dynamodb)
+- **Customer managed key** (your KMS key)
+</Tab>
+</Tabs>
+
+## Table Classes
+
+Choose the right table class for your access patterns:
+
+| Class | Best For | Cost |
+|-------|----------|------|
+| **Standard** | Frequently accessed data | Higher storage, lower throughput |
+| **Standard-IA** | Infrequently accessed data | 60% lower storage cost |
+
+```bash title="Create Standard-IA table"
+aws dynamodb create-table \
+  --table-name ArchiveTable \
+  --attribute-definitions \
+    AttributeName=id,AttributeType=S \
+  --key-schema \
+    AttributeName=id,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST \
+  --table-class STANDARD_INFREQUENT_ACCESS
+```
+
+## Time to Live (TTL)
+
+Automatically delete expired items:
+
+```bash title="Enable TTL"
+aws dynamodb update-time-to-live \
+  --table-name Sessions \
+  --time-to-live-specification \
+    Enabled=true,AttributeName=expirationTime
+```
+
+```javascript title="Item with TTL"
+const item = {
+  sessionId: { S: "abc123" },
+  userId: { S: "user-1" },
+  expirationTime: { N: String(Math.floor(Date.now() / 1000) + 3600) } // 1 hour
+};
+```
+
+<Callout type="info">
+TTL is eventually consistent. Items may persist up to 48 hours after expiration. Deletes don't consume WCUs.
+</Callout>
+
+## Auto Scaling
+
+Configure automatic capacity scaling:
+
+```bash title="Register scalable target"
+aws application-autoscaling register-scalable-target \
+  --service-namespace dynamodb \
+  --resource-id "table/Products" \
+  --scalable-dimension dynamodb:table:ReadCapacityUnits \
+  --min-capacity 5 \
+  --max-capacity 100
+```
+
+```bash title="Create scaling policy"
+aws application-autoscaling put-scaling-policy \
+  --service-namespace dynamodb \
+  --resource-id "table/Products" \
+  --scalable-dimension dynamodb:table:ReadCapacityUnits \
+  --policy-name ProductsReadScaling \
+  --policy-type TargetTrackingScaling \
+  --target-tracking-scaling-policy-configuration '{
+    "TargetValue": 70.0,
+    "PredefinedMetricSpecification": {
+      "PredefinedMetricType": "DynamoDBReadCapacityUtilization"
+    },
+    "ScaleInCooldown": 60,
+    "ScaleOutCooldown": 60
+  }'
+```
+
+## Managing Tables
+
+<Tabs items={['Describe', 'Update', 'Delete']}>
+<Tab value="Describe">
+```bash title="Get table details"
+aws dynamodb describe-table \
+  --table-name Products \
+  --query 'Table.{
+    Name: TableName,
+    Status: TableStatus,
+    ItemCount: ItemCount,
+    Size: TableSizeBytes,
+    Keys: KeySchema
+  }'
+```
+
+```bash title="List all tables"
+aws dynamodb list-tables
+```
+</Tab>
+<Tab value="Update">
+```bash title="Update capacity"
+aws dynamodb update-table \
+  --table-name Products \
+  --provisioned-throughput \
+    ReadCapacityUnits=20,WriteCapacityUnits=10
+```
+
+```bash title="Change billing mode"
+aws dynamodb update-table \
+  --table-name Products \
+  --billing-mode PAY_PER_REQUEST
+```
+
+```bash title="Change table class"
+aws dynamodb update-table \
+  --table-name Products \
+  --table-class STANDARD_INFREQUENT_ACCESS
+```
+</Tab>
+<Tab value="Delete">
+```bash title="Delete table"
+aws dynamodb delete-table --table-name Products
+```
+
+<Callout type="error">
+Deleting a table is irreversible. All data is permanently lost. Consider enabling Point-in-Time Recovery before deletion.
+</Callout>
+</Tab>
+</Tabs>
+
+## Point-in-Time Recovery
+
+Enable continuous backups:
+
+```bash title="Enable PITR"
+aws dynamodb update-continuous-backups \
+  --table-name Products \
+  --point-in-time-recovery-specification \
+    PointInTimeRecoveryEnabled=true
+```
+
+```bash title="Restore to point in time"
+aws dynamodb restore-table-to-point-in-time \
+  --source-table-name Products \
+  --target-table-name Products-Restored \
+  --restore-date-time 2024-01-15T10:30:00Z
+```
+
+<Callout type="info">
+PITR retains 35 days of backups. You can restore to any second within that window.
+</Callout>
+
+## On-Demand Backup
+
+Create manual backups:
+
+```bash title="Create backup"
+aws dynamodb create-backup \
+  --table-name Products \
+  --backup-name Products-2024-01-15
+```
+
+```bash title="Restore from backup"
+aws dynamodb restore-table-from-backup \
+  --target-table-name Products-Restored \
+  --backup-arn arn:aws:dynamodb:us-east-1:123456789012:table/Products/backup/01234567890
+```
+
+```bash title="List backups"
+aws dynamodb list-backups \
+  --table-name Products
+```
+
+## Table Design Best Practices
+
+<Steps>
+<Step>
+### Design for Access Patterns
+Start with your queries, then design your table structure:
+
+```text
+Access Pattern: Get orders for a customer in the last month
+→ Partition Key: customerId
+→ Sort Key: orderDate
+```
+</Step>
+<Step>
+### Use Composite Sort Keys
+Combine multiple values in the sort key for flexible queries:
+
+```text
+Sort Key: ORDER#2024-01-15#order123
+→ Query by type: begins_with(sk, "ORDER#")
+→ Query by date: begins_with(sk, "ORDER#2024-01")
+→ Query specific: sk = "ORDER#2024-01-15#order123"
+```
+</Step>
+<Step>
+### Consider Single-Table Design
+For related entities, use the same table with different key patterns:
+
+```text
+PK          | SK                | Attributes
+USER#123    | PROFILE           | name, email, ...
+USER#123    | ORDER#2024-01-15  | total, status, ...
+USER#123    | ADDR#home         | street, city, ...
+```
+</Step>
+<Step>
+### Distribute Partition Keys
+Avoid hot partitions with high-cardinality keys:
+
+**Good:** `userId`, `orderId`, `productId`
+**Bad:** `status` (only a few values), `date` (sequential)
+</Step>
+</Steps>
+
+## Table Metrics
+
+Monitor table health:
+
+```bash title="Get table metrics"
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/DynamoDB \
+  --metric-name ConsumedReadCapacityUnits \
+  --dimensions Name=TableName,Value=Products \
+  --start-time $(date -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date +%Y-%m-%dT%H:%M:%SZ) \
+  --period 300 \
+  --statistics Sum
+```
+
+Key metrics:
+- **ConsumedReadCapacityUnits/ConsumedWriteCapacityUnits**
+- **ThrottledRequests**
+- **SuccessfulRequestLatency**
+- **UserErrors/SystemErrors**
+
+## Best Practices
+
+<Callout type="info" title="Table Design Guidelines">
+1. **Design for access patterns first** - Not normalized like SQL
+2. **Use on-demand for variable workloads** - Avoid capacity planning
+3. **Enable PITR** - Protection against data loss
+4. **Use TTL** - Automatic cleanup of expired data
+5. **Monitor throttles** - Set up CloudWatch alarms
+6. **Consider Standard-IA** - For infrequent access tables
+7. **Tag tables** - For cost allocation and organization
+8. **Use consistent naming** - Environment, application prefixes
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="Indexes" href="/docs/aws/dynamodb/indexes" description="GSI and LSI" />
+  <Card title="Streams" href="/docs/aws/dynamodb/streams" description="Change data capture" />
+  <Card title="Capacity" href="/docs/aws/dynamodb/capacity" description="Throughput and scaling" />
+  <Card title="DynamoDB CLI" href="/docs/aws/dynamodb/cli" description="CLI reference" />
+</Cards>

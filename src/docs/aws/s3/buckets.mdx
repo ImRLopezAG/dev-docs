@@ -1,0 +1,442 @@
+---
+title: S3 Buckets
+description: Deep dive into S3 bucket creation, configuration, and management
+---
+
+S3 buckets are containers for storing objects in Amazon S3. Understanding bucket configuration is fundamental to working with S3 effectively.
+
+## Bucket Fundamentals
+
+<Callout type="info" title="Key Facts">
+- Bucket names must be **globally unique** across all AWS accounts
+- Buckets are created in a specific AWS Region
+- You can have up to 100 buckets per account (soft limit)
+- Buckets cannot be nested within other buckets
+</Callout>
+
+## Bucket Naming Rules
+
+<Steps>
+<Step>
+### Length Requirements
+- Minimum: 3 characters
+- Maximum: 63 characters
+</Step>
+<Step>
+### Character Rules
+- Lowercase letters (a-z)
+- Numbers (0-9)
+- Hyphens (-)
+- Must start and end with a letter or number
+</Step>
+<Step>
+### Format Restrictions
+- Cannot be formatted as IP addresses (e.g., 192.168.1.1)
+- Cannot start with `xn--` (reserved for S3 Access Points)
+- Cannot end with `-s3alias` (reserved)
+- Cannot contain consecutive periods
+</Step>
+</Steps>
+
+## Creating Buckets
+
+<Tabs items={['Basic Creation', 'With Options', 'With Encryption']}>
+<Tab value="Basic Creation">
+```bash title="Create a bucket"
+# Create bucket in your default region
+aws s3 mb s3://my-unique-bucket-name
+
+# Create bucket in a specific region
+aws s3api create-bucket \
+  --bucket my-unique-bucket-name \
+  --region us-west-2 \
+  --create-bucket-configuration LocationConstraint=us-west-2
+```
+
+<Callout type="warn">
+For regions other than `us-east-1`, you must specify `LocationConstraint`.
+</Callout>
+</Tab>
+<Tab value="With Options">
+```bash title="Create bucket with ACL"
+aws s3api create-bucket \
+  --bucket my-bucket \
+  --region us-east-1 \
+  --acl private \
+  --object-ownership BucketOwnerEnforced
+```
+
+<Callout type="info">
+`BucketOwnerEnforced` disables ACLs and is the recommended setting.
+</Callout>
+</Tab>
+<Tab value="With Encryption">
+```bash title="Create bucket with encryption"
+# First create the bucket
+aws s3api create-bucket \
+  --bucket my-encrypted-bucket \
+  --region us-east-1
+
+# Then enable default encryption
+aws s3api put-bucket-encryption \
+  --bucket my-encrypted-bucket \
+  --server-side-encryption-configuration '{
+    "Rules": [{
+      "ApplyServerSideEncryptionByDefault": {
+        "SSEAlgorithm": "aws:kms",
+        "KMSMasterKeyID": "alias/aws/s3"
+      },
+      "BucketKeyEnabled": true
+    }]
+  }'
+```
+</Tab>
+</Tabs>
+
+## Block Public Access
+
+<Callout type="error" title="Security Critical">
+Always enable Block Public Access settings unless you have a specific requirement for public access.
+</Callout>
+
+```bash title="Enable all public access blocks"
+aws s3api put-public-access-block \
+  --bucket my-bucket \
+  --public-access-block-configuration '{
+    "BlockPublicAcls": true,
+    "IgnorePublicAcls": true,
+    "BlockPublicPolicy": true,
+    "RestrictPublicBuckets": true
+  }'
+```
+
+### Understanding Block Settings
+
+| Setting | Description |
+|---------|-------------|
+| **BlockPublicAcls** | Rejects PUT calls with public ACLs |
+| **IgnorePublicAcls** | Ignores existing public ACLs on objects |
+| **BlockPublicPolicy** | Rejects bucket policies that grant public access |
+| **RestrictPublicBuckets** | Restricts access to only authorized users |
+
+## Bucket Ownership
+
+<Tabs items={['Object Ownership', 'ACL Settings']}>
+<Tab value="Object Ownership">
+Control who owns objects uploaded to your bucket:
+
+```bash title="Set bucket ownership"
+aws s3api put-bucket-ownership-controls \
+  --bucket my-bucket \
+  --ownership-controls '{
+    "Rules": [{
+      "ObjectOwnership": "BucketOwnerEnforced"
+    }]
+  }'
+```
+
+| Setting | Behavior |
+|---------|----------|
+| **BucketOwnerEnforced** | ACLs disabled, bucket owner owns all objects (recommended) |
+| **BucketOwnerPreferred** | Bucket owner owns objects if uploaded with `bucket-owner-full-control` ACL |
+| **ObjectWriter** | Object uploading account owns the object |
+</Tab>
+<Tab value="ACL Settings">
+<Callout type="warn">
+ACLs are legacy. Use bucket policies and IAM policies instead.
+</Callout>
+
+If you must use ACLs:
+
+```bash title="Apply bucket ACL"
+aws s3api put-bucket-acl \
+  --bucket my-bucket \
+  --acl private
+```
+
+Available canned ACLs:
+- `private` - Owner gets full control
+- `public-read` - Anyone can read (avoid unless necessary)
+- `authenticated-read` - Any authenticated AWS user can read
+</Tab>
+</Tabs>
+
+## Bucket Tagging
+
+Tags help organize and track costs:
+
+```bash title="Add tags to bucket"
+aws s3api put-bucket-tagging \
+  --bucket my-bucket \
+  --tagging '{
+    "TagSet": [
+      {"Key": "Environment", "Value": "Production"},
+      {"Key": "Project", "Value": "MyApp"},
+      {"Key": "CostCenter", "Value": "Engineering"}
+    ]
+  }'
+```
+
+```bash title="Get bucket tags"
+aws s3api get-bucket-tagging --bucket my-bucket
+```
+
+## Bucket Logging
+
+Enable server access logging to track requests:
+
+```bash title="Enable access logging"
+# First, grant log delivery permissions to target bucket
+aws s3api put-bucket-acl \
+  --bucket my-logs-bucket \
+  --grant-write URI=http://acs.amazonaws.com/groups/s3/LogDelivery \
+  --grant-read-acp URI=http://acs.amazonaws.com/groups/s3/LogDelivery
+
+# Then enable logging
+aws s3api put-bucket-logging \
+  --bucket my-bucket \
+  --bucket-logging-status '{
+    "LoggingEnabled": {
+      "TargetBucket": "my-logs-bucket",
+      "TargetPrefix": "logs/my-bucket/"
+    }
+  }'
+```
+
+<Callout type="info">
+Log files are delivered on a best-effort basis. There may be delays of several hours.
+</Callout>
+
+## Bucket Notifications
+
+Configure event notifications:
+
+<Tabs items={['SNS', 'SQS', 'Lambda']}>
+<Tab value="SNS">
+```json title="sns-notification-config.json"
+{
+  "TopicConfigurations": [
+    {
+      "Id": "ObjectCreated",
+      "TopicArn": "arn:aws:sns:us-east-1:123456789012:my-topic",
+      "Events": ["s3:ObjectCreated:*"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {
+              "Name": "prefix",
+              "Value": "uploads/"
+            },
+            {
+              "Name": "suffix",
+              "Value": ".jpg"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+```
+</Tab>
+<Tab value="SQS">
+```json title="sqs-notification-config.json"
+{
+  "QueueConfigurations": [
+    {
+      "Id": "ProcessUploads",
+      "QueueArn": "arn:aws:sqs:us-east-1:123456789012:my-queue",
+      "Events": ["s3:ObjectCreated:*"]
+    }
+  ]
+}
+```
+</Tab>
+<Tab value="Lambda">
+```json title="lambda-notification-config.json"
+{
+  "LambdaFunctionConfigurations": [
+    {
+      "Id": "ImageProcessor",
+      "LambdaFunctionArn": "arn:aws:lambda:us-east-1:123456789012:function:ProcessImage",
+      "Events": ["s3:ObjectCreated:Put"],
+      "Filter": {
+        "Key": {
+          "FilterRules": [
+            {"Name": "suffix", "Value": ".png"}
+          ]
+        }
+      }
+    }
+  ]
+}
+```
+</Tab>
+</Tabs>
+
+```bash title="Apply notification configuration"
+aws s3api put-bucket-notification-configuration \
+  --bucket my-bucket \
+  --notification-configuration file://notification-config.json
+```
+
+## Transfer Acceleration
+
+Speed up uploads from distant locations:
+
+```bash title="Enable Transfer Acceleration"
+aws s3api put-bucket-accelerate-configuration \
+  --bucket my-bucket \
+  --accelerate-configuration Status=Enabled
+```
+
+<Callout type="info">
+Transfer Acceleration uses CloudFront edge locations. Bucket name cannot contain periods.
+</Callout>
+
+```bash title="Upload using acceleration"
+aws s3 cp large-file.zip s3://my-bucket/ \
+  --endpoint-url https://s3-accelerate.amazonaws.com
+```
+
+## Requester Pays
+
+Make the requester pay for data transfer:
+
+```bash title="Enable Requester Pays"
+aws s3api put-bucket-request-payment \
+  --bucket my-bucket \
+  --request-payment-configuration Payer=Requester
+```
+
+<Callout type="warn">
+Anonymous requests are not allowed on Requester Pays buckets.
+</Callout>
+
+## Bucket Metrics
+
+Enable metrics for detailed monitoring:
+
+```bash title="Enable bucket metrics"
+aws s3api put-bucket-metrics-configuration \
+  --bucket my-bucket \
+  --id EntireBucket \
+  --metrics-configuration Id=EntireBucket
+```
+
+```bash title="Enable metrics for prefix"
+aws s3api put-bucket-metrics-configuration \
+  --bucket my-bucket \
+  --id UploadsMetrics \
+  --metrics-configuration '{
+    "Id": "UploadsMetrics",
+    "Filter": {
+      "Prefix": "uploads/"
+    }
+  }'
+```
+
+## Deleting Buckets
+
+<Callout type="error" title="Warning">
+Buckets must be empty before deletion. This includes all object versions if versioning is enabled.
+</Callout>
+
+<Tabs items={['Force Delete', 'Versioned Bucket']}>
+<Tab value="Force Delete">
+```bash title="Delete bucket and all contents"
+# Delete all objects first
+aws s3 rm s3://my-bucket --recursive
+
+# Then delete the bucket
+aws s3 rb s3://my-bucket
+```
+
+Or in one command:
+```bash title="Force delete"
+aws s3 rb s3://my-bucket --force
+```
+</Tab>
+<Tab value="Versioned Bucket">
+```bash title="Delete versioned bucket"
+# Delete all object versions
+aws s3api list-object-versions \
+  --bucket my-bucket \
+  --query 'Versions[].{Key:Key,VersionId:VersionId}' \
+  --output text | while read KEY VERSION; do
+    aws s3api delete-object \
+      --bucket my-bucket \
+      --key "$KEY" \
+      --version-id "$VERSION"
+  done
+
+# Delete all delete markers
+aws s3api list-object-versions \
+  --bucket my-bucket \
+  --query 'DeleteMarkers[].{Key:Key,VersionId:VersionId}' \
+  --output text | while read KEY VERSION; do
+    aws s3api delete-object \
+      --bucket my-bucket \
+      --key "$KEY" \
+      --version-id "$VERSION"
+  done
+
+# Now delete the bucket
+aws s3 rb s3://my-bucket
+```
+</Tab>
+</Tabs>
+
+## Bucket Inventory
+
+Generate inventory reports for auditing:
+
+```bash title="Enable inventory"
+aws s3api put-bucket-inventory-configuration \
+  --bucket my-bucket \
+  --id daily-inventory \
+  --inventory-configuration '{
+    "Id": "daily-inventory",
+    "IsEnabled": true,
+    "Destination": {
+      "S3BucketDestination": {
+        "Bucket": "arn:aws:s3:::my-inventory-bucket",
+        "Format": "CSV",
+        "Prefix": "inventory/"
+      }
+    },
+    "Schedule": {
+      "Frequency": "Daily"
+    },
+    "IncludedObjectVersions": "Current",
+    "OptionalFields": [
+      "Size",
+      "LastModifiedDate",
+      "StorageClass",
+      "ETag",
+      "EncryptionStatus"
+    ]
+  }'
+```
+
+## Best Practices
+
+<Callout type="info" title="Bucket Design Recommendations">
+1. **Use meaningful names** - Include environment, region, or purpose
+2. **One bucket per application/purpose** - Easier access control
+3. **Enable versioning** for important data
+4. **Enable encryption by default** - Use SSE-S3 or SSE-KMS
+5. **Block public access** unless required
+6. **Enable access logging** for audit trails
+7. **Use lifecycle policies** to manage storage costs
+8. **Tag buckets** for cost allocation
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="Storage Classes" href="/docs/aws/s3/storage-classes" description="Optimize storage costs" />
+  <Card title="Versioning" href="/docs/aws/s3/versioning" description="Object version management" />
+  <Card title="Security" href="/docs/aws/s3/security" description="Policies and encryption" />
+  <Card title="S3 CLI Reference" href="/docs/aws/s3/cli" description="Complete CLI commands" />
+</Cards>

@@ -1,0 +1,6 @@
+{
+	"title": "API Gateway",
+	"description": "API Management Service",
+	"icon": "Globe",
+	"pages": ["index", "cli"]
+}

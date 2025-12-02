@@ -1,0 +1,364 @@
+---
+title: RDS CLI Reference
+description: AWS CLI commands for Relational Database Service
+---
+
+Complete reference for AWS RDS CLI commands with examples.
+
+## Instance Management
+
+### Create DB Instance
+
+```bash
+# Create MySQL instance
+aws rds create-db-instance \
+  --db-instance-identifier mydb \
+  --db-instance-class db.t3.micro \
+  --engine mysql \
+  --engine-version 8.0 \
+  --master-username admin \
+  --master-user-password MyPassword123! \
+  --allocated-storage 20 \
+  --storage-type gp3
+
+# Create PostgreSQL with Multi-AZ
+aws rds create-db-instance \
+  --db-instance-identifier mydb \
+  --db-instance-class db.r5.large \
+  --engine postgres \
+  --engine-version 15 \
+  --master-username admin \
+  --master-user-password MyPassword123! \
+  --allocated-storage 100 \
+  --storage-type gp3 \
+  --multi-az \
+  --db-subnet-group-name my-subnet-group \
+  --vpc-security-group-ids sg-0123456789abcdef0
+```
+
+**Common Options:**
+| Option | Description |
+|--------|-------------|
+| `--db-instance-identifier` | Unique identifier |
+| `--db-instance-class` | Instance type |
+| `--engine` | Database engine |
+| `--master-username` | Master user |
+| `--master-user-password` | Master password |
+| `--allocated-storage` | Storage in GB |
+| `--multi-az` | Enable Multi-AZ |
+
+### Describe DB Instances
+
+```bash
+# List all instances
+aws rds describe-db-instances
+
+# Get specific instance
+aws rds describe-db-instances \
+  --db-instance-identifier mydb
+
+# Get only endpoints
+aws rds describe-db-instances \
+  --db-instance-identifier mydb \
+  --query 'DBInstances[0].Endpoint'
+```
+
+### Modify DB Instance
+
+```bash
+# Change instance class
+aws rds modify-db-instance \
+  --db-instance-identifier mydb \
+  --db-instance-class db.r5.xlarge \
+  --apply-immediately
+
+# Enable Multi-AZ
+aws rds modify-db-instance \
+  --db-instance-identifier mydb \
+  --multi-az
+
+# Increase storage
+aws rds modify-db-instance \
+  --db-instance-identifier mydb \
+  --allocated-storage 200
+
+# Enable Performance Insights
+aws rds modify-db-instance \
+  --db-instance-identifier mydb \
+  --enable-performance-insights \
+  --performance-insights-retention-period 7
+```
+
+### Stop/Start Instance
+
+```bash
+# Stop instance
+aws rds stop-db-instance --db-instance-identifier mydb
+
+# Start instance
+aws rds start-db-instance --db-instance-identifier mydb
+
+# Reboot instance
+aws rds reboot-db-instance --db-instance-identifier mydb
+```
+
+### Delete DB Instance
+
+```bash
+# Delete with final snapshot
+aws rds delete-db-instance \
+  --db-instance-identifier mydb \
+  --final-db-snapshot-identifier mydb-final-snapshot
+
+# Delete without final snapshot
+aws rds delete-db-instance \
+  --db-instance-identifier mydb \
+  --skip-final-snapshot \
+  --delete-automated-backups
+```
+
+## Snapshots
+
+### Create Snapshot
+
+```bash
+aws rds create-db-snapshot \
+  --db-instance-identifier mydb \
+  --db-snapshot-identifier mydb-snapshot-2024
+```
+
+### List Snapshots
+
+```bash
+# List all snapshots
+aws rds describe-db-snapshots
+
+# List snapshots for instance
+aws rds describe-db-snapshots \
+  --db-instance-identifier mydb
+```
+
+### Copy Snapshot
+
+```bash
+# Copy to another region
+aws rds copy-db-snapshot \
+  --source-db-snapshot-identifier arn:aws:rds:us-east-1:123456789012:snapshot:mydb-snapshot \
+  --target-db-snapshot-identifier mydb-snapshot-copy \
+  --source-region us-east-1 \
+  --region us-west-2
+```
+
+### Restore from Snapshot
+
+```bash
+aws rds restore-db-instance-from-db-snapshot \
+  --db-instance-identifier mydb-restored \
+  --db-snapshot-identifier mydb-snapshot
+```
+
+### Delete Snapshot
+
+```bash
+aws rds delete-db-snapshot --db-snapshot-identifier mydb-snapshot
+```
+
+## Point-in-Time Recovery
+
+```bash
+aws rds restore-db-instance-to-point-in-time \
+  --source-db-instance-identifier mydb \
+  --target-db-instance-identifier mydb-pitr \
+  --restore-time 2024-01-15T10:30:00Z
+
+# Restore to latest restorable time
+aws rds restore-db-instance-to-point-in-time \
+  --source-db-instance-identifier mydb \
+  --target-db-instance-identifier mydb-latest \
+  --use-latest-restorable-time
+```
+
+## Read Replicas
+
+### Create Read Replica
+
+```bash
+aws rds create-db-instance-read-replica \
+  --db-instance-identifier mydb-replica \
+  --source-db-instance-identifier mydb \
+  --db-instance-class db.r5.large
+
+# Cross-region replica
+aws rds create-db-instance-read-replica \
+  --db-instance-identifier mydb-replica-west \
+  --source-db-instance-identifier arn:aws:rds:us-east-1:123456789012:db:mydb \
+  --db-instance-class db.r5.large \
+  --region us-west-2
+```
+
+### Promote Read Replica
+
+```bash
+aws rds promote-read-replica \
+  --db-instance-identifier mydb-replica
+```
+
+## Parameter Groups
+
+### Create Parameter Group
+
+```bash
+aws rds create-db-parameter-group \
+  --db-parameter-group-name my-mysql-params \
+  --db-parameter-group-family mysql8.0 \
+  --description "Custom MySQL 8.0 parameters"
+```
+
+### Modify Parameters
+
+```bash
+aws rds modify-db-parameter-group \
+  --db-parameter-group-name my-mysql-params \
+  --parameters "ParameterName=max_connections,ParameterValue=500,ApplyMethod=pending-reboot" \
+               "ParameterName=slow_query_log,ParameterValue=1,ApplyMethod=immediate"
+```
+
+### Describe Parameters
+
+```bash
+aws rds describe-db-parameters \
+  --db-parameter-group-name my-mysql-params
+```
+
+### Apply Parameter Group
+
+```bash
+aws rds modify-db-instance \
+  --db-instance-identifier mydb \
+  --db-parameter-group-name my-mysql-params \
+  --apply-immediately
+```
+
+## Subnet Groups
+
+### Create Subnet Group
+
+```bash
+aws rds create-db-subnet-group \
+  --db-subnet-group-name my-subnet-group \
+  --db-subnet-group-description "My DB subnet group" \
+  --subnet-ids subnet-123 subnet-456
+```
+
+### Describe Subnet Groups
+
+```bash
+aws rds describe-db-subnet-groups
+```
+
+## Security Groups
+
+### Authorize Access
+
+```bash
+# Add CIDR range
+aws rds authorize-db-security-group-ingress \
+  --db-security-group-name mydb-sg \
+  --cidrip 10.0.0.0/8
+
+# Add EC2 security group
+aws rds authorize-db-security-group-ingress \
+  --db-security-group-name mydb-sg \
+  --ec2-security-group-name my-ec2-sg
+```
+
+## Option Groups
+
+### Create Option Group
+
+```bash
+aws rds create-option-group \
+  --option-group-name my-option-group \
+  --engine-name mysql \
+  --major-engine-version 8.0 \
+  --option-group-description "MySQL 8.0 options"
+```
+
+### Add Option
+
+```bash
+aws rds add-option-to-option-group \
+  --option-group-name my-option-group \
+  --options OptionName=MEMCACHED
+```
+
+## Event Subscriptions
+
+### Create Subscription
+
+```bash
+aws rds create-event-subscription \
+  --subscription-name mydb-events \
+  --sns-topic-arn arn:aws:sns:us-east-1:123456789012:rds-events \
+  --source-type db-instance \
+  --source-ids mydb \
+  --event-categories availability backup configuration change failure
+```
+
+### Describe Events
+
+```bash
+aws rds describe-events \
+  --source-identifier mydb \
+  --source-type db-instance \
+  --duration 1440
+```
+
+## Logs
+
+### Describe Log Files
+
+```bash
+aws rds describe-db-log-files \
+  --db-instance-identifier mydb
+```
+
+### Download Log File
+
+```bash
+aws rds download-db-log-file-portion \
+  --db-instance-identifier mydb \
+  --log-file-name error/mysql-error.log \
+  --output text
+```
+
+## Tags
+
+```bash
+# Add tags
+aws rds add-tags-to-resource \
+  --resource-name arn:aws:rds:us-east-1:123456789012:db:mydb \
+  --tags Key=Environment,Value=Production
+
+# List tags
+aws rds list-tags-for-resource \
+  --resource-name arn:aws:rds:us-east-1:123456789012:db:mydb
+
+# Remove tags
+aws rds remove-tags-from-resource \
+  --resource-name arn:aws:rds:us-east-1:123456789012:db:mydb \
+  --tag-keys Environment
+```
+
+## Engine Versions
+
+```bash
+# List available versions
+aws rds describe-db-engine-versions --engine mysql
+
+# Get orderable instance options
+aws rds describe-orderable-db-instance-options \
+  --engine mysql \
+  --engine-version 8.0 \
+  --query 'OrderableDBInstanceOptions[*].DBInstanceClass'
+```

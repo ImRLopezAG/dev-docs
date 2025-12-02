@@ -1,0 +1,6 @@
+{
+	"title": "IAM",
+	"description": "AWS Identity and Access Management",
+	"icon": "Shield",
+	"pages": ["index", "users", "roles", "policies", "best-practices", "cli"]
+}

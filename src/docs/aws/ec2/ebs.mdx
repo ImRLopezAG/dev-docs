@@ -1,0 +1,390 @@
+---
+title: EC2 EBS Volumes
+description: Persistent block storage for Amazon EC2 instances
+---
+
+**Amazon Elastic Block Store (EBS)** provides persistent block storage volumes for EC2 instances. EBS volumes persist independently from the running life of an instance.
+
+<Callout type="info" title="Key Benefits">
+EBS volumes are automatically replicated within their Availability Zone to protect against hardware failure, providing high availability and durability.
+</Callout>
+
+## Volume Types
+
+<Tabs items={['SSD Volumes', 'HDD Volumes', 'Comparison']}>
+<Tab value="SSD Volumes">
+### gp3 (General Purpose SSD)
+
+The latest generation general-purpose SSD. **Recommended for most workloads.**
+
+| Attribute | Value |
+|-----------|-------|
+| Size | 1 GiB - 16 TiB |
+| Baseline IOPS | 3,000 |
+| Max IOPS | 16,000 |
+| Baseline Throughput | 125 MiB/s |
+| Max Throughput | 1,000 MiB/s |
+
+```bash title="Create gp3 Volume"
+aws ec2 create-volume \
+  --volume-type gp3 \
+  --size 100 \
+  --iops 4000 \
+  --throughput 250 \
+  --availability-zone us-east-1a
+```
+
+### io2 Block Express (Provisioned IOPS)
+
+Highest performance SSD for critical workloads.
+
+| Attribute | Value |
+|-----------|-------|
+| Size | 4 GiB - 64 TiB |
+| Max IOPS | 256,000 |
+| Max Throughput | 4,000 MiB/s |
+| Durability | 99.999% |
+
+```bash title="Create io2 Volume"
+aws ec2 create-volume \
+  --volume-type io2 \
+  --size 500 \
+  --iops 64000 \
+  --availability-zone us-east-1a
+```
+</Tab>
+<Tab value="HDD Volumes">
+### st1 (Throughput Optimized HDD)
+
+Low-cost HDD for frequently accessed, throughput-intensive workloads.
+
+| Attribute | Value |
+|-----------|-------|
+| Size | 125 GiB - 16 TiB |
+| Max IOPS | 500 |
+| Max Throughput | 500 MiB/s |
+
+Best for: Big data, data warehouses, log processing
+
+### sc1 (Cold HDD)
+
+Lowest cost HDD for less frequently accessed workloads.
+
+| Attribute | Value |
+|-----------|-------|
+| Size | 125 GiB - 16 TiB |
+| Max IOPS | 250 |
+| Max Throughput | 250 MiB/s |
+
+Best for: Infrequently accessed data, archives
+</Tab>
+<Tab value="Comparison">
+| Type | Use Case | IOPS | Throughput | Cost |
+|------|----------|------|------------|------|
+| **gp3** | Most workloads | 16,000 | 1,000 MiB/s | $$ |
+| **gp2** | Legacy general purpose | 16,000 | 250 MiB/s | $$ |
+| **io2** | Critical databases | 256,000 | 4,000 MiB/s | $$$$ |
+| **io1** | Legacy high IOPS | 64,000 | 1,000 MiB/s | $$$ |
+| **st1** | Big data | 500 | 500 MiB/s | $ |
+| **sc1** | Cold storage | 250 | 250 MiB/s | $ |
+
+<Callout type="info">
+For most workloads, gp3 offers the best price/performance. Use io2 only for demanding database workloads.
+</Callout>
+</Tab>
+</Tabs>
+
+## Managing Volumes
+
+### Create and Attach
+
+<Steps>
+<Step>
+### Create Volume
+
+```bash title="Create Volume"
+aws ec2 create-volume \
+  --volume-type gp3 \
+  --size 100 \
+  --availability-zone us-east-1a \
+  --tag-specifications 'ResourceType=volume,Tags=[{Key=Name,Value=data-volume}]'
+```
+</Step>
+<Step>
+### Attach to Instance
+
+```bash title="Attach Volume"
+aws ec2 attach-volume \
+  --volume-id vol-0123456789abcdef0 \
+  --instance-id i-0123456789abcdef0 \
+  --device /dev/xvdf
+```
+</Step>
+<Step>
+### Format and Mount (on instance)
+
+```bash title="Format and Mount"
+# Check device name (might be different from specified)
+lsblk
+
+# Create filesystem
+sudo mkfs -t xfs /dev/xvdf
+
+# Create mount point
+sudo mkdir /data
+
+# Mount
+sudo mount /dev/xvdf /data
+
+# Add to fstab for persistence
+echo '/dev/xvdf /data xfs defaults,nofail 0 2' | sudo tee -a /etc/fstab
+```
+</Step>
+</Steps>
+
+### Modify Volume
+
+Increase size or change type without downtime:
+
+```bash title="Modify Volume"
+aws ec2 modify-volume \
+  --volume-id vol-0123456789abcdef0 \
+  --size 200 \
+  --volume-type gp3 \
+  --iops 6000 \
+  --throughput 400
+```
+
+After modification, extend the filesystem:
+
+```bash title="Extend Filesystem"
+# For XFS
+sudo xfs_growfs /data
+
+# For ext4
+sudo resize2fs /dev/xvdf
+```
+
+<Callout type="warn">
+You can only increase volume size, not decrease. There's a 6-hour cooldown between modifications.
+</Callout>
+
+### Detach and Delete
+
+```bash title="Detach Volume"
+# Unmount on instance first
+sudo umount /data
+
+# Detach
+aws ec2 detach-volume --volume-id vol-0123456789abcdef0
+
+# Delete (careful - data is lost!)
+aws ec2 delete-volume --volume-id vol-0123456789abcdef0
+```
+
+## Snapshots
+
+Snapshots are point-in-time copies of EBS volumes, stored in S3.
+
+### Create Snapshot
+
+```bash title="Create Snapshot"
+aws ec2 create-snapshot \
+  --volume-id vol-0123456789abcdef0 \
+  --description "Daily backup" \
+  --tag-specifications 'ResourceType=snapshot,Tags=[{Key=Name,Value=daily-backup}]'
+```
+
+### Restore from Snapshot
+
+```bash title="Create Volume from Snapshot"
+aws ec2 create-volume \
+  --snapshot-id snap-0123456789abcdef0 \
+  --volume-type gp3 \
+  --availability-zone us-east-1a
+```
+
+### Automate with Data Lifecycle Manager
+
+```bash title="Create Lifecycle Policy"
+aws dlm create-lifecycle-policy \
+  --description "Daily EBS snapshots" \
+  --state ENABLED \
+  --execution-role-arn arn:aws:iam::123456789012:role/AWSDataLifecycleManagerDefaultRole \
+  --policy-details '{
+    "PolicyType": "EBS_SNAPSHOT_MANAGEMENT",
+    "ResourceTypes": ["VOLUME"],
+    "TargetTags": [{"Key": "Backup", "Value": "true"}],
+    "Schedules": [{
+      "Name": "Daily",
+      "CreateRule": {"Interval": 24, "IntervalUnit": "HOURS", "Times": ["03:00"]},
+      "RetainRule": {"Count": 7},
+      "CopyTags": true
+    }]
+  }'
+```
+
+## Encryption
+
+### Enable Encryption
+
+<Tabs items={['New Volumes', 'Existing Volumes', 'Default Encryption']}>
+<Tab value="New Volumes">
+```bash title="Create Encrypted Volume"
+aws ec2 create-volume \
+  --volume-type gp3 \
+  --size 100 \
+  --encrypted \
+  --kms-key-id alias/aws/ebs \
+  --availability-zone us-east-1a
+```
+</Tab>
+<Tab value="Existing Volumes">
+You cannot directly encrypt an existing unencrypted volume. Create an encrypted copy:
+
+<Steps>
+<Step>
+### Create Snapshot
+
+```bash
+aws ec2 create-snapshot --volume-id vol-unencrypted123
+```
+</Step>
+<Step>
+### Copy with Encryption
+
+```bash
+aws ec2 copy-snapshot \
+  --source-region us-east-1 \
+  --source-snapshot-id snap-unencrypted123 \
+  --encrypted \
+  --kms-key-id alias/aws/ebs
+```
+</Step>
+<Step>
+### Create New Volume
+
+```bash
+aws ec2 create-volume \
+  --snapshot-id snap-encrypted456 \
+  --availability-zone us-east-1a
+```
+</Step>
+</Steps>
+</Tab>
+<Tab value="Default Encryption">
+Enable default encryption for all new volumes in a region:
+
+```bash title="Enable Default Encryption"
+aws ec2 enable-ebs-encryption-by-default
+
+# Check status
+aws ec2 get-ebs-encryption-by-default
+```
+</Tab>
+</Tabs>
+
+<Callout type="info">
+EBS encryption uses AWS KMS. There's no performance impact with encrypted volumes on modern instance types.
+</Callout>
+
+## Multi-Attach
+
+Allow io1/io2 volumes to attach to multiple instances (up to 16):
+
+```bash title="Create Multi-Attach Volume"
+aws ec2 create-volume \
+  --volume-type io2 \
+  --size 100 \
+  --iops 10000 \
+  --multi-attach-enabled \
+  --availability-zone us-east-1a
+```
+
+Requirements:
+- io1 or io2 volumes only
+- Nitro-based instances only
+- Instances must be in same AZ
+- Requires cluster-aware filesystem (not ext4/xfs)
+
+## Performance Optimization
+
+### IOPS and Throughput
+
+gp3 allows independent provisioning:
+
+```bash title="Provision IOPS and Throughput"
+aws ec2 modify-volume \
+  --volume-id vol-0123456789abcdef0 \
+  --iops 10000 \
+  --throughput 500
+```
+
+### EBS-Optimized Instances
+
+Most modern instances are EBS-optimized by default:
+
+```bash title="Check EBS Optimization"
+aws ec2 describe-instance-types \
+  --instance-types m6i.large \
+  --query 'InstanceTypes[0].EbsInfo'
+```
+
+### RAID for Higher Performance
+
+For performance beyond single volume limits:
+
+| Configuration | Use Case |
+|---------------|----------|
+| **RAID 0** | Maximum performance (no redundancy) |
+| **RAID 1** | Mirroring (not recommended, use EBS replication) |
+| **RAID 10** | Performance + redundancy |
+
+<Callout type="warn">
+RAID 5/6 is not recommended due to parity write penalty.
+</Callout>
+
+## Monitoring
+
+### CloudWatch Metrics
+
+| Metric | Description |
+|--------|-------------|
+| `VolumeReadOps` | Read operations |
+| `VolumeWriteOps` | Write operations |
+| `VolumeReadBytes` | Bytes read |
+| `VolumeWriteBytes` | Bytes written |
+| `VolumeTotalReadTime` | Read latency |
+| `VolumeTotalWriteTime` | Write latency |
+| `VolumeQueueLength` | I/O queue length |
+| `BurstBalance` | gp2 burst credit balance |
+
+```bash title="Get Volume Metrics"
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/EBS \
+  --metric-name VolumeReadOps \
+  --dimensions Name=VolumeId,Value=vol-0123456789abcdef0 \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-02T00:00:00Z \
+  --period 3600 \
+  --statistics Sum
+```
+
+## Best Practices
+
+<Callout type="info" title="EBS Best Practices">
+1. **Use gp3** for most workloads (better price/performance than gp2)
+2. **Enable encryption** by default for all new volumes
+3. **Take regular snapshots** using Data Lifecycle Manager
+4. **Right-size volumes** - you can always increase later
+5. **Monitor performance** - watch for IOPS/throughput limits
+6. **Use separate volumes** for OS and data for easier management
+7. **Delete unused volumes** - you pay for provisioned storage
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="EC2 AMIs" href="/docs/aws/ec2/amis" description="Amazon Machine Images" />
+  <Card title="EC2 CLI" href="/docs/aws/ec2/cli" description="Complete CLI reference" />
+</Cards>

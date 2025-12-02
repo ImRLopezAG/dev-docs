@@ -1,0 +1,268 @@
+---
+title: EC2 Instance Types
+description: Choose the right instance type for your workload
+---
+
+Amazon EC2 provides a wide selection of instance types optimized for different use cases. Understanding instance types helps you optimize cost and performance.
+
+<Callout type="info" title="Instance Naming">
+Instance names follow the pattern: `[family][generation][processor].[size]`
+Example: `m6i.xlarge` = M family, 6th gen, Intel processor, xlarge size
+</Callout>
+
+## Instance Families
+
+<Tabs items={['General Purpose', 'Compute Optimized', 'Memory Optimized', 'Storage Optimized', 'Accelerated Computing']}>
+<Tab value="General Purpose">
+Balanced compute, memory, and networking. Ideal for diverse workloads.
+
+| Type | vCPUs | Memory | Network | Use Cases |
+|------|-------|--------|---------|-----------|
+| **t3.micro** | 2 | 1 GiB | Up to 5 Gbps | Development, testing |
+| **t3.medium** | 2 | 4 GiB | Up to 5 Gbps | Small web apps |
+| **t3.large** | 2 | 8 GiB | Up to 5 Gbps | Medium web apps |
+| **m6i.large** | 2 | 8 GiB | Up to 12.5 Gbps | Production apps |
+| **m6i.xlarge** | 4 | 16 GiB | Up to 12.5 Gbps | Databases |
+| **m6i.2xlarge** | 8 | 32 GiB | Up to 12.5 Gbps | Enterprise apps |
+
+**T-series (Burstable)**
+- Baseline CPU performance with ability to burst
+- Good for variable workloads
+- Accumulate CPU credits when idle
+- Lower cost than fixed-performance instances
+
+**M-series (Fixed)**
+- Consistent CPU performance
+- Best for steady-state workloads
+- No credit system
+</Tab>
+<Tab value="Compute Optimized">
+High-performance processors for compute-intensive tasks.
+
+| Type | vCPUs | Memory | Network | Use Cases |
+|------|-------|--------|---------|-----------|
+| **c6i.large** | 2 | 4 GiB | Up to 12.5 Gbps | Batch processing |
+| **c6i.xlarge** | 4 | 8 GiB | Up to 12.5 Gbps | Gaming servers |
+| **c6i.2xlarge** | 8 | 16 GiB | Up to 12.5 Gbps | Scientific modeling |
+| **c6i.4xlarge** | 16 | 32 GiB | Up to 12.5 Gbps | Ad serving |
+
+**Best for:**
+- Batch processing
+- Media transcoding
+- High-performance web servers
+- Scientific modeling
+- Gaming servers
+- Machine learning inference
+</Tab>
+<Tab value="Memory Optimized">
+Fast performance for workloads that process large datasets in memory.
+
+| Type | vCPUs | Memory | Network | Use Cases |
+|------|-------|--------|---------|-----------|
+| **r6i.large** | 2 | 16 GiB | Up to 12.5 Gbps | In-memory caching |
+| **r6i.xlarge** | 4 | 32 GiB | Up to 12.5 Gbps | Real-time analytics |
+| **r6i.2xlarge** | 8 | 64 GiB | Up to 12.5 Gbps | High-perf databases |
+| **x2idn.xlarge** | 4 | 128 GiB | Up to 25 Gbps | SAP HANA |
+
+**Best for:**
+- High-performance databases
+- Distributed in-memory caching (Redis, Memcached)
+- Real-time big data analytics
+- In-memory databases (SAP HANA)
+</Tab>
+<Tab value="Storage Optimized">
+High sequential read/write access to large datasets on local storage.
+
+| Type | vCPUs | Memory | Storage | Use Cases |
+|------|-------|--------|---------|-----------|
+| **i3.large** | 2 | 15.25 GiB | 1 x 475 NVMe SSD | NoSQL databases |
+| **i3.xlarge** | 4 | 30.5 GiB | 1 x 950 NVMe SSD | Data warehousing |
+| **d2.xlarge** | 4 | 30.5 GiB | 3 x 2 TB HDD | Hadoop clusters |
+
+**Best for:**
+- Data warehousing
+- Distributed file systems
+- High-frequency OLTP
+- Elasticsearch clusters
+</Tab>
+<Tab value="Accelerated Computing">
+Hardware accelerators (GPUs, FPGAs) for specialized workloads.
+
+| Type | vCPUs | Memory | GPUs | Use Cases |
+|------|-------|--------|------|-----------|
+| **p4d.24xlarge** | 96 | 1152 GiB | 8 x A100 | Deep learning training |
+| **g5.xlarge** | 4 | 16 GiB | 1 x A10G | ML inference |
+| **g4dn.xlarge** | 4 | 16 GiB | 1 x T4 | Video transcoding |
+| **inf1.xlarge** | 4 | 8 GiB | 1 x Inferentia | ML inference |
+
+**Best for:**
+- Machine learning training
+- High-performance computing
+- Graphics-intensive applications
+- Video encoding
+</Tab>
+</Tabs>
+
+## Processor Options
+
+### Intel vs AMD vs Graviton
+
+| Processor | Instance Suffix | Cost | Performance |
+|-----------|-----------------|------|-------------|
+| **Intel** | `i` (e.g., m6i) | Baseline | Best compatibility |
+| **AMD** | `a` (e.g., m6a) | ~10% less | Similar to Intel |
+| **Graviton (ARM)** | `g` (e.g., m6g) | ~20% less | Up to 40% better price/performance |
+
+<Callout type="info" title="Graviton Recommendation">
+For new workloads, consider Graviton instances. They offer better price/performance for most applications. Ensure your software supports ARM architecture.
+</Callout>
+
+```bash title="Launch Graviton Instance"
+aws ec2 run-instances \
+  --instance-type m6g.large \
+  --image-id ami-0123456789abcdef0 \
+  --key-name my-key
+```
+
+## T-Series Burstable Instances
+
+T-series instances provide a baseline CPU performance with the ability to burst above the baseline.
+
+### CPU Credits
+
+| Instance | Baseline | Credits/Hour | Max Credits |
+|----------|----------|--------------|-------------|
+| t3.micro | 10% | 6 | 144 |
+| t3.small | 20% | 12 | 288 |
+| t3.medium | 20% | 24 | 576 |
+| t3.large | 30% | 36 | 864 |
+
+### Credit Modes
+
+<Tabs items={['Standard', 'Unlimited']}>
+<Tab value="Standard">
+- Instance uses accrued credits for bursting
+- When credits depleted, performance drops to baseline
+- No additional charges
+
+```bash title="Set Standard Mode"
+aws ec2 modify-instance-credit-specification \
+  --instance-credit-specification "InstanceId=i-1234567890abcdef0,CpuCredits=standard"
+```
+</Tab>
+<Tab value="Unlimited">
+- Instance can burst beyond credit balance
+- Charged for surplus credits used
+- Better for unpredictable workloads
+
+```bash title="Set Unlimited Mode"
+aws ec2 modify-instance-credit-specification \
+  --instance-credit-specification "InstanceId=i-1234567890abcdef0,CpuCredits=unlimited"
+```
+
+<Callout type="warn">
+Monitor unlimited instances closely to avoid unexpected charges from sustained high CPU usage.
+</Callout>
+</Tab>
+</Tabs>
+
+## Choosing the Right Instance
+
+<Steps>
+<Step>
+### Understand Your Workload
+
+- **CPU-bound**: Compute optimized (c6i)
+- **Memory-bound**: Memory optimized (r6i)
+- **Storage-bound**: Storage optimized (i3)
+- **Balanced**: General purpose (m6i)
+- **Variable**: Burstable (t3)
+</Step>
+<Step>
+### Start Small and Scale
+
+Begin with a smaller instance and monitor:
+
+```bash title="Resize Instance"
+# Stop instance
+aws ec2 stop-instances --instance-ids i-1234567890abcdef0
+
+# Change instance type
+aws ec2 modify-instance-attribute \
+  --instance-id i-1234567890abcdef0 \
+  --instance-type m6i.xlarge
+
+# Start instance
+aws ec2 start-instances --instance-ids i-1234567890abcdef0
+```
+</Step>
+<Step>
+### Use AWS Compute Optimizer
+
+Get recommendations based on actual usage:
+
+```bash title="Get Recommendations"
+aws compute-optimizer get-ec2-instance-recommendations \
+  --instance-arns arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0
+```
+</Step>
+</Steps>
+
+## Instance Features
+
+### Enhanced Networking
+
+Higher packet per second (PPS) performance:
+
+```bash title="Check ENA Support"
+aws ec2 describe-instances \
+  --instance-ids i-1234567890abcdef0 \
+  --query 'Reservations[].Instances[].EnaSupport'
+```
+
+### Nitro System
+
+Modern EC2 instances use the Nitro System:
+- Better performance
+- Enhanced security
+- Bare metal capabilities
+- Required for some features (e.g., EBS encryption)
+
+### Placement Groups
+
+Control instance placement for performance:
+
+| Type | Use Case |
+|------|----------|
+| **Cluster** | Low latency, high throughput (HPC) |
+| **Spread** | Critical instances across hardware |
+| **Partition** | Large distributed workloads (Hadoop) |
+
+```bash title="Create Placement Group"
+aws ec2 create-placement-group \
+  --group-name my-cluster \
+  --strategy cluster
+```
+
+## Pricing Comparison
+
+Approximate monthly costs (us-east-1, Linux):
+
+| Instance | On-Demand | 1-Year RI | Spot |
+|----------|-----------|-----------|------|
+| t3.micro | $7.60 | $4.70 | $2.30 |
+| t3.medium | $30.40 | $18.80 | $9.10 |
+| m6i.large | $70.10 | $43.30 | $21.00 |
+| c6i.xlarge | $124.10 | $76.70 | $37.20 |
+| r6i.large | $91.98 | $56.80 | $27.60 |
+
+<Callout type="info">
+Use Spot Instances for fault-tolerant workloads to save up to 90%. Use Reserved Instances or Savings Plans for steady-state workloads.
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="EC2 AMIs" href="/docs/aws/ec2/amis" description="Amazon Machine Images" />
+  <Card title="EC2 Security Groups" href="/docs/aws/ec2/security-groups" description="Network security" />
+</Cards>

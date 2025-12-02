@@ -1,0 +1,127 @@
+---
+title: Structural Patterns
+description: Patterns that deal with object composition and relationships
+icon: Box
+---
+
+# Structural Patterns
+
+Structural design patterns explain how to assemble objects and classes into larger structures while keeping these structures flexible and efficient.
+
+```mermaid
+mindmap
+  root((Structural Patterns))
+    Adapter
+      Converts interface of a class
+      Wraps incompatible objects
+    Bridge
+      Separates abstraction from implementation
+      Allows independent variation
+    Composite
+      Composes objects into tree structures
+      Treats individual and composite uniformly
+    Decorator
+      Adds responsibilities dynamically
+      Wraps objects to extend behavior
+    Facade
+      Provides simplified interface
+      Hides system complexity
+    Flyweight
+      Shares common state
+      Reduces memory usage
+    Proxy
+      Controls access to object
+      Provides placeholder
+```
+
+## The Patterns
+
+<Cards>
+  <Card
+    title="Adapter"
+    description="Convert the interface of a class into another interface clients expect"
+    href="/docs/architecture/patterns/structural/adapter"
+  />
+  <Card
+    title="Bridge"
+    description="Decouple an abstraction from its implementation so both can vary independently"
+    href="/docs/architecture/patterns/structural/bridge"
+  />
+  <Card
+    title="Composite"
+    description="Compose objects into tree structures to represent part-whole hierarchies"
+    href="/docs/architecture/patterns/structural/composite"
+  />
+  <Card
+    title="Decorator"
+    description="Attach additional responsibilities to an object dynamically"
+    href="/docs/architecture/patterns/structural/decorator"
+  />
+  <Card
+    title="Facade"
+    description="Provide a unified interface to a set of interfaces in a subsystem"
+    href="/docs/architecture/patterns/structural/facade"
+  />
+  <Card
+    title="Flyweight"
+    description="Use sharing to support large numbers of fine-grained objects efficiently"
+    href="/docs/architecture/patterns/structural/flyweight"
+  />
+  <Card
+    title="Proxy"
+    description="Provide a surrogate or placeholder for another object to control access"
+    href="/docs/architecture/patterns/structural/proxy"
+  />
+</Cards>
+
+## Quick Comparison
+
+| Pattern | Intent | Complexity | Frequency |
+|---------|--------|------------|-----------|
+| Adapter | Make incompatible interfaces work together | ⭐⭐ | Very Common |
+| Bridge | Separate abstraction from implementation | ⭐⭐⭐ | Common |
+| Composite | Compose objects into trees | ⭐⭐ | Common |
+| Decorator | Add responsibilities dynamically | ⭐⭐ | Common |
+| Facade | Simplify complex subsystems | ⭐ | Very Common |
+| Flyweight | Share common state efficiently | ⭐⭐⭐ | Less Common |
+| Proxy | Control access to objects | ⭐⭐ | Common |
+
+## When to Use Which?
+
+```mermaid
+flowchart TD
+    A[Need to structure objects?] --> B{What's the goal?}
+    
+    B -->|"Make interfaces compatible"| C[Adapter]
+    B -->|"Separate abstraction/implementation"| D[Bridge]
+    B -->|"Tree structure"| E[Composite]
+    B -->|"Add behavior dynamically"| F[Decorator]
+    B -->|"Simplify complex system"| G[Facade]
+    B -->|"Save memory with shared state"| H[Flyweight]
+    B -->|"Control access"| I[Proxy]
+    
+    style C fill:#4CAF50
+    style D fill:#2196F3
+    style E fill:#FF9800
+    style F fill:#9C27B0
+    style G fill:#00BCD4
+    style H fill:#FF5722
+    style I fill:#795548
+```
+
+## Key Relationships
+
+```mermaid
+graph LR
+    A[Adapter] -->|"similar to"| P[Proxy]
+    D[Decorator] -->|"similar to"| P
+    A -->|"vs"| B[Bridge]
+    D -->|"vs"| C[Composite]
+    F[Facade] -->|"uses"| C
+    
+    subgraph "Wrapping Patterns"
+        A
+        D
+        P
+    end
+```

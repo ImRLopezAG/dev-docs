@@ -1,0 +1,172 @@
+---
+title: AWS CLI Setup
+description: Install and configure the AWS Command Line Interface
+---
+
+The AWS Command Line Interface (CLI) is a unified tool to manage your AWS services from the command line.
+
+<Callout type="info" title="Prerequisites">
+You'll need an AWS account and IAM credentials before configuring the CLI.
+</Callout>
+
+## Installation
+
+<Tabs groupId="os" items={['macOS', 'Linux', 'Windows']}>
+<Tab value="macOS">
+```bash title="Install with Homebrew (Recommended)"
+brew install awscli
+```
+
+Or download the official installer:
+
+```bash title="Manual Installation"
+curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "AWSCLIV2.pkg"
+sudo installer -pkg AWSCLIV2.pkg -target /
+```
+</Tab>
+<Tab value="Linux">
+```bash title="Download and Install"
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+```
+
+For ARM-based systems:
+
+```bash title="ARM64 Installation"
+curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+```
+</Tab>
+<Tab value="Windows">
+```powershell title="MSI Installer"
+msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi
+```
+
+Or download from the [AWS CLI page](https://aws.amazon.com/cli/).
+</Tab>
+</Tabs>
+
+## Configuration
+
+<Steps>
+<Step>
+### Run Configuration Wizard
+
+```bash title="Configure AWS CLI"
+aws configure
+```
+
+You'll be prompted for:
+- **AWS Access Key ID**: Your access key
+- **AWS Secret Access Key**: Your secret key
+- **Default region name**: e.g., `us-east-1`
+- **Default output format**: `json`, `yaml`, `text`, or `table`
+</Step>
+<Step>
+### Verify Configuration
+
+```bash title="Test Your Setup"
+aws sts get-caller-identity
+```
+
+Expected output:
+```json title="Success Response"
+{
+    "UserId": "AIDAEXAMPLEID",
+    "Account": "123456789012",
+    "Arn": "arn:aws:iam::123456789012:user/username"
+}
+```
+</Step>
+</Steps>
+
+### Named Profiles
+
+Create multiple profiles for different environments:
+
+```bash title="Configure Named Profile"
+# Configure a named profile
+aws configure --profile production
+
+# Use a named profile
+aws s3 ls --profile production
+
+# Set default profile
+export AWS_PROFILE=production
+```
+
+### Configuration Files
+
+AWS CLI stores configuration in two files:
+
+<Files>
+  <Folder name="~/.aws" defaultOpen>
+    <File name="config" />
+    <File name="credentials" />
+  </Folder>
+</Files>
+
+```ini title="~/.aws/credentials"
+[default]
+aws_access_key_id = YOUR_ACCESS_KEY
+aws_secret_access_key = YOUR_SECRET_KEY
+
+[production]
+aws_access_key_id = PROD_ACCESS_KEY
+aws_secret_access_key = PROD_SECRET_KEY
+```
+
+```ini title="~/.aws/config"
+[default]
+region = us-east-1
+output = json
+
+[profile production]
+region = us-west-2
+output = yaml
+```
+
+<Callout type="warn" title="Security">
+Never commit AWS credentials to version control. Use environment variables or AWS profiles instead.
+</Callout>
+
+## Verify Installation
+
+```bash title="Check Version"
+aws --version
+```
+
+## Common Options
+
+| Option | Description |
+|--------|-------------|
+| `--profile` | Use a specific profile |
+| `--region` | Override the default region |
+| `--output` | Output format (json, yaml, text, table) |
+| `--query` | JMESPath query for filtering output |
+| `--dry-run` | Check permissions without making changes |
+
+## Environment Variables
+
+```bash title="Set Credentials via Environment"
+export AWS_ACCESS_KEY_ID="your-access-key"
+export AWS_SECRET_ACCESS_KEY="your-secret-key"
+export AWS_DEFAULT_REGION="us-east-1"
+```
+
+```bash title="Use a Specific Profile"
+export AWS_PROFILE="production"
+```
+
+<Callout type="info" title="Credential Precedence">
+AWS CLI uses credentials in this order: CLI options → Environment variables → Config files → Instance metadata (EC2/ECS).
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="IAM" href="/docs/aws/iam" description="Learn about Identity and Access Management" />
+  <Card title="S3" href="/docs/aws/s3" description="Start using S3 storage" />
+</Cards>

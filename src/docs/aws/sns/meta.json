@@ -1,0 +1,6 @@
+{
+	"title": "SNS",
+	"description": "Simple Notification Service",
+	"icon": "Bell",
+	"pages": ["index", "cli"]
+}

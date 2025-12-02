@@ -1,0 +1,6 @@
+{
+	"title": "RDS",
+	"description": "Relational Database Service",
+	"icon": "Database",
+	"pages": ["index", "cli"]
+}

@@ -1,0 +1,15 @@
+{
+	"title": "Architecture",
+	"description": "Software Architecture, Design Patterns, and Infrastructure as Code",
+	"icon": "Building2",
+	"root": true,
+	"pages": [
+		"index",
+		"---Code Style---",
+		"patterns",
+		"design-principles",
+		"---Infrastructure as Code---",
+		"iac",
+		"clean"
+	]
+}

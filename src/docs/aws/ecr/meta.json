@@ -1,0 +1,6 @@
+{
+	"title": "ECR",
+	"description": "Elastic Container Registry",
+	"icon": "Package",
+	"pages": ["index", "cli"]
+}

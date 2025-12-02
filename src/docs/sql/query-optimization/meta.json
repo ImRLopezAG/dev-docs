@@ -1,0 +1,6 @@
+{
+	"title": "Query Optimization",
+	"description": "Performance tuning and execution plans",
+	"icon": "Gauge",
+	"pages": ["index", "explain", "anti-patterns"]
+}

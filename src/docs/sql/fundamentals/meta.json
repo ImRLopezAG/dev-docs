@@ -1,0 +1,15 @@
+{
+	"title": "SQL Fundamentals",
+	"description": "Core SQL syntax and operations",
+	"icon": "BookOpen",
+	"pages": [
+		"index",
+		"select",
+		"joins",
+		"aggregations",
+		"subqueries",
+		"ctes",
+		"window-functions",
+		"data-modification"
+	]
+}

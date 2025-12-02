@@ -1,0 +1,645 @@
+---
+title: S3 Security
+description: Comprehensive guide to S3 security, access control, encryption, and compliance
+---
+
+Securing your S3 buckets is critical. This guide covers access control, encryption, monitoring, and security best practices.
+
+## Security Model Overview
+
+<Callout type="info" title="Defense in Depth">
+S3 security uses multiple layers: IAM policies, bucket policies, ACLs, encryption, and monitoring. Use them together for comprehensive protection.
+</Callout>
+
+## Access Control Methods
+
+S3 provides several mechanisms to control access:
+
+| Method | Scope | Use Case |
+|--------|-------|----------|
+| **IAM Policies** | User/Role | Control what principals can do |
+| **Bucket Policies** | Bucket | Resource-based access control |
+| **ACLs** | Object/Bucket | Legacy, avoid if possible |
+| **Block Public Access** | Account/Bucket | Prevent accidental exposure |
+| **Access Points** | Bucket | Simplified access management |
+
+## Block Public Access
+
+<Callout type="error" title="First Line of Defense">
+Always enable Block Public Access unless you have a specific need for public access.
+</Callout>
+
+<Tabs items={['Account Level', 'Bucket Level']}>
+<Tab value="Account Level">
+```bash title="Enable for entire account"
+aws s3control put-public-access-block \
+  --account-id 123456789012 \
+  --public-access-block-configuration '{
+    "BlockPublicAcls": true,
+    "IgnorePublicAcls": true,
+    "BlockPublicPolicy": true,
+    "RestrictPublicBuckets": true
+  }'
+```
+</Tab>
+<Tab value="Bucket Level">
+```bash title="Enable for specific bucket"
+aws s3api put-public-access-block \
+  --bucket my-bucket \
+  --public-access-block-configuration '{
+    "BlockPublicAcls": true,
+    "IgnorePublicAcls": true,
+    "BlockPublicPolicy": true,
+    "RestrictPublicBuckets": true
+  }'
+```
+</Tab>
+</Tabs>
+
+### Block Public Access Settings Explained
+
+| Setting | What It Does |
+|---------|--------------|
+| **BlockPublicAcls** | Blocks PUT requests with public ACLs |
+| **IgnorePublicAcls** | Ignores existing public ACLs |
+| **BlockPublicPolicy** | Blocks bucket policies granting public access |
+| **RestrictPublicBuckets** | Restricts access to authorized users only |
+
+## Bucket Policies
+
+Resource-based policies attached to buckets:
+
+<Tabs items={['Read Only', 'Specific IPs', 'Cross Account', 'VPC Only']}>
+<Tab value="Read Only">
+```json title="Read-only for specific IAM role"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnlyAccess",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:role/ReadOnlyRole"
+      },
+      "Action": [
+        "s3:GetObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::my-bucket",
+        "arn:aws:s3:::my-bucket/*"
+      ]
+    }
+  ]
+}
+```
+</Tab>
+<Tab value="Specific IPs">
+```json title="Allow only from specific IPs"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "IPRestriction",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::my-bucket",
+        "arn:aws:s3:::my-bucket/*"
+      ],
+      "Condition": {
+        "NotIpAddress": {
+          "aws:SourceIp": [
+            "203.0.113.0/24",
+            "198.51.100.0/24"
+          ]
+        }
+      }
+    }
+  ]
+}
+```
+</Tab>
+<Tab value="Cross Account">
+```json title="Cross-account access"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CrossAccountAccess",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::987654321098:root"
+      },
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/*",
+      "Condition": {
+        "StringEquals": {
+          "s3:x-amz-acl": "bucket-owner-full-control"
+        }
+      }
+    }
+  ]
+}
+```
+</Tab>
+<Tab value="VPC Only">
+```json title="Restrict to VPC endpoint"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "VPCEndpointOnly",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::my-bucket",
+        "arn:aws:s3:::my-bucket/*"
+      ],
+      "Condition": {
+        "StringNotEquals": {
+          "aws:SourceVpce": "vpce-1234567890abcdef0"
+        }
+      }
+    }
+  ]
+}
+```
+</Tab>
+</Tabs>
+
+```bash title="Apply bucket policy"
+aws s3api put-bucket-policy \
+  --bucket my-bucket \
+  --policy file://policy.json
+```
+
+## IAM Policies for S3
+
+<Tabs items={['Full Access', 'Read Only', 'Specific Prefix', 'Conditional']}>
+<Tab value="Full Access">
+```json title="Full S3 access (use sparingly)"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+<Callout type="warn">
+Never use `s3:*` on `*` in production. Always scope to specific buckets.
+</Callout>
+</Tab>
+<Tab value="Read Only">
+```json title="Read-only access to bucket"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:GetObjectTagging"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::my-bucket"
+    }
+  ]
+}
+```
+</Tab>
+<Tab value="Specific Prefix">
+```json title="Access to specific prefix only"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/users/${aws:username}/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::my-bucket",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": ["users/${aws:username}/*"]
+        }
+      }
+    }
+  ]
+}
+```
+</Tab>
+<Tab value="Conditional">
+```json title="MFA required for delete"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Deny",
+      "Action": [
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/*",
+      "Condition": {
+        "Bool": {
+          "aws:MultiFactorAuthPresent": "false"
+        }
+      }
+    }
+  ]
+}
+```
+</Tab>
+</Tabs>
+
+## S3 Access Points
+
+Simplify access management for shared buckets:
+
+```bash title="Create access point"
+aws s3control create-access-point \
+  --account-id 123456789012 \
+  --name my-access-point \
+  --bucket my-bucket \
+  --vpc-configuration VpcId=vpc-12345678
+```
+
+```json title="Access point policy"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:role/DataScientist"
+      },
+      "Action": ["s3:GetObject", "s3:PutObject"],
+      "Resource": "arn:aws:s3:us-east-1:123456789012:accesspoint/my-access-point/object/data/*"
+    }
+  ]
+}
+```
+
+## Encryption
+
+### Server-Side Encryption
+
+<Tabs items={['SSE-S3', 'SSE-KMS', 'SSE-C', 'DSSE-KMS']}>
+<Tab value="SSE-S3">
+AWS manages keys automatically. Simplest option.
+
+```bash title="Enable default SSE-S3 encryption"
+aws s3api put-bucket-encryption \
+  --bucket my-bucket \
+  --server-side-encryption-configuration '{
+    "Rules": [{
+      "ApplyServerSideEncryptionByDefault": {
+        "SSEAlgorithm": "AES256"
+      },
+      "BucketKeyEnabled": true
+    }]
+  }'
+```
+
+```bash title="Upload with SSE-S3"
+aws s3 cp file.txt s3://my-bucket/ \
+  --sse AES256
+```
+</Tab>
+<Tab value="SSE-KMS">
+Use AWS KMS for key management with audit trail.
+
+```bash title="Enable default SSE-KMS encryption"
+aws s3api put-bucket-encryption \
+  --bucket my-bucket \
+  --server-side-encryption-configuration '{
+    "Rules": [{
+      "ApplyServerSideEncryptionByDefault": {
+        "SSEAlgorithm": "aws:kms",
+        "KMSMasterKeyID": "alias/my-key"
+      },
+      "BucketKeyEnabled": true
+    }]
+  }'
+```
+
+```bash title="Upload with SSE-KMS"
+aws s3 cp file.txt s3://my-bucket/ \
+  --sse aws:kms \
+  --sse-kms-key-id alias/my-key
+```
+
+<Callout type="info">
+Enable **Bucket Keys** to reduce KMS API calls and costs.
+</Callout>
+</Tab>
+<Tab value="SSE-C">
+Customer provides their own keys. Keys are not stored by AWS.
+
+```bash title="Upload with SSE-C"
+# Generate a key
+openssl rand -out sse-c-key.bin 32
+
+# Upload with customer key
+aws s3 cp file.txt s3://my-bucket/ \
+  --sse-c AES256 \
+  --sse-c-key fileb://sse-c-key.bin
+```
+
+<Callout type="error">
+You MUST provide the same key for every GET request. Losing the key means losing the data.
+</Callout>
+</Tab>
+<Tab value="DSSE-KMS">
+Dual-layer server-side encryption for highest security.
+
+```bash title="Enable DSSE-KMS"
+aws s3api put-bucket-encryption \
+  --bucket my-bucket \
+  --server-side-encryption-configuration '{
+    "Rules": [{
+      "ApplyServerSideEncryptionByDefault": {
+        "SSEAlgorithm": "aws:kms:dsse",
+        "KMSMasterKeyID": "alias/my-key"
+      },
+      "BucketKeyEnabled": true
+    }]
+  }'
+```
+</Tab>
+</Tabs>
+
+### Client-Side Encryption
+
+Encrypt before uploading:
+
+```bash title="Encrypt locally, then upload"
+# Encrypt with GPG
+gpg --symmetric --cipher-algo AES256 sensitive-data.txt
+
+# Upload encrypted file
+aws s3 cp sensitive-data.txt.gpg s3://my-bucket/
+```
+
+### Enforce Encryption
+
+```json title="Deny unencrypted uploads"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyUnencryptedUploads",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::my-bucket/*",
+      "Condition": {
+        "Null": {
+          "s3:x-amz-server-side-encryption": "true"
+        }
+      }
+    },
+    {
+      "Sid": "DenyNonKMSEncryption",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::my-bucket/*",
+      "Condition": {
+        "StringNotEquals": {
+          "s3:x-amz-server-side-encryption": "aws:kms"
+        }
+      }
+    }
+  ]
+}
+```
+
+## Enforce HTTPS
+
+```json title="Deny non-HTTPS requests"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EnforceHTTPS",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::my-bucket",
+        "arn:aws:s3:::my-bucket/*"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "false"
+        }
+      }
+    }
+  ]
+}
+```
+
+## Object Lock (WORM)
+
+Prevent object deletion for compliance:
+
+<Callout type="info">
+Object Lock must be enabled when creating the bucket. It cannot be added later.
+</Callout>
+
+```bash title="Create bucket with Object Lock"
+aws s3api create-bucket \
+  --bucket my-compliance-bucket \
+  --object-lock-enabled-for-bucket \
+  --region us-east-1
+```
+
+<Tabs items={['Governance Mode', 'Compliance Mode', 'Legal Hold']}>
+<Tab value="Governance Mode">
+Protects objects but can be overridden with special permissions.
+
+```bash title="Set governance mode retention"
+aws s3api put-object-retention \
+  --bucket my-bucket \
+  --key important.pdf \
+  --retention '{
+    "Mode": "GOVERNANCE",
+    "RetainUntilDate": "2025-01-01T00:00:00Z"
+  }'
+```
+</Tab>
+<Tab value="Compliance Mode">
+No one can delete or shorten retention—including root.
+
+```bash title="Set compliance mode retention"
+aws s3api put-object-retention \
+  --bucket my-bucket \
+  --key regulatory.pdf \
+  --retention '{
+    "Mode": "COMPLIANCE",
+    "RetainUntilDate": "2030-01-01T00:00:00Z"
+  }'
+```
+
+<Callout type="error">
+Compliance mode retention CANNOT be shortened or removed. Use carefully.
+</Callout>
+</Tab>
+<Tab value="Legal Hold">
+Indefinite protection until explicitly removed.
+
+```bash title="Enable legal hold"
+aws s3api put-object-legal-hold \
+  --bucket my-bucket \
+  --key evidence.pdf \
+  --legal-hold Status=ON
+```
+
+```bash title="Remove legal hold"
+aws s3api put-object-legal-hold \
+  --bucket my-bucket \
+  --key evidence.pdf \
+  --legal-hold Status=OFF
+```
+</Tab>
+</Tabs>
+
+## Access Logging
+
+Enable server access logging for audit trails:
+
+```bash title="Enable access logging"
+aws s3api put-bucket-logging \
+  --bucket my-bucket \
+  --bucket-logging-status '{
+    "LoggingEnabled": {
+      "TargetBucket": "my-logs-bucket",
+      "TargetPrefix": "s3-access-logs/my-bucket/",
+      "TargetObjectKeyFormat": {
+        "PartitionedPrefix": {
+          "PartitionDateSource": "DeliveryTime"
+        }
+      }
+    }
+  }'
+```
+
+<Callout type="info">
+Use partitioned prefixes for easier querying with Athena.
+</Callout>
+
+## AWS Access Analyzer
+
+Find buckets with public or cross-account access:
+
+```bash title="Get Access Analyzer findings"
+aws accessanalyzer list-findings \
+  --analyzer-arn arn:aws:access-analyzer:us-east-1:123456789012:analyzer/MyAnalyzer \
+  --filter '{"resourceType": {"eq": ["AWS::S3::Bucket"]}}'
+```
+
+## Macie for Data Discovery
+
+Enable Macie to discover sensitive data:
+
+```bash title="Enable Macie"
+aws macie2 enable-macie
+
+# Create classification job
+aws macie2 create-classification-job \
+  --job-type ONE_TIME \
+  --name "SensitiveDataScan" \
+  --s3-job-definition '{
+    "bucketDefinitions": [{
+      "accountId": "123456789012",
+      "buckets": ["my-bucket"]
+    }]
+  }'
+```
+
+## Security Best Practices
+
+<Steps>
+<Step>
+### Enable Block Public Access
+Account-wide and bucket-level for defense in depth.
+</Step>
+<Step>
+### Use Bucket Policies Wisely
+Prefer IAM policies; use bucket policies for cross-account and resource-level conditions.
+</Step>
+<Step>
+### Enable Default Encryption
+Use SSE-KMS with bucket keys for audit trails and cost efficiency.
+</Step>
+<Step>
+### Enforce HTTPS
+Add bucket policy condition to deny non-HTTPS requests.
+</Step>
+<Step>
+### Enable Versioning
+Protect against accidental deletions and overwrites.
+</Step>
+<Step>
+### Enable Logging
+Access logs for audit, CloudTrail for API activity.
+</Step>
+<Step>
+### Use VPC Endpoints
+Keep S3 traffic within AWS network.
+</Step>
+<Step>
+### Regular Audits
+Use Access Analyzer, Config Rules, and Security Hub.
+</Step>
+</Steps>
+
+## Security Checklist
+
+<Callout type="info" title="S3 Security Audit Checklist">
+- [ ] Block Public Access enabled (account + bucket)
+- [ ] Default encryption enabled (SSE-KMS preferred)
+- [ ] HTTPS enforced via bucket policy
+- [ ] Versioning enabled for important data
+- [ ] Access logging enabled
+- [ ] CloudTrail data events enabled
+- [ ] MFA Delete enabled for critical buckets
+- [ ] IAM policies follow least privilege
+- [ ] No overly permissive bucket policies
+- [ ] VPC endpoints configured
+- [ ] Access Analyzer findings reviewed
+- [ ] Macie scans for sensitive data
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="Versioning" href="/docs/aws/s3/versioning" description="Version protection" />
+  <Card title="Lifecycle Rules" href="/docs/aws/s3/lifecycle" description="Automated management" />
+  <Card title="Storage Classes" href="/docs/aws/s3/storage-classes" description="Cost optimization" />
+  <Card title="S3 CLI Reference" href="/docs/aws/s3/cli" description="Complete CLI commands" />
+</Cards>

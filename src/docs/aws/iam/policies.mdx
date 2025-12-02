@@ -1,0 +1,441 @@
+---
+title: IAM Policies
+description: Define permissions using JSON policy documents
+---
+
+**IAM policies** are JSON documents that define permissions. They specify what actions are allowed or denied on which AWS resources, and under what conditions.
+
+<Callout type="info" title="Policy Evaluation">
+AWS evaluates policies in this order: Explicit Deny → Organizations SCPs → Resource-based policies → Permission boundaries → Session policies → Identity-based policies. An explicit deny always wins.
+</Callout>
+
+## Policy Structure
+
+Every IAM policy follows this structure:
+
+```json title="policy-structure.json"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "UniqueStatementId",
+      "Effect": "Allow",
+      "Action": ["service:Action"],
+      "Resource": ["arn:aws:service:region:account:resource"],
+      "Condition": {
+        "ConditionOperator": {
+          "ConditionKey": "value"
+        }
+      }
+    }
+  ]
+}
+```
+
+## Policy Elements
+
+<Tabs items={['Effect', 'Action', 'Resource', 'Condition', 'Principal']}>
+<Tab value="Effect">
+Specifies whether the statement allows or denies access.
+
+| Value | Description |
+|-------|-------------|
+| `Allow` | Grants the specified permissions |
+| `Deny` | Explicitly denies the specified permissions |
+
+```json title="Allow Effect"
+{
+  "Effect": "Allow",
+  "Action": "s3:GetObject",
+  "Resource": "*"
+}
+```
+
+<Callout type="warn">
+An explicit `Deny` always overrides any `Allow`. Use deny statements carefully.
+</Callout>
+</Tab>
+<Tab value="Action">
+Specifies the actions this statement covers. Format: `service:action`
+
+```json title="Action Examples"
+{
+  "Action": [
+    "s3:GetObject",           // Specific action
+    "s3:PutObject",
+    "s3:List*",               // Wildcard prefix
+    "ec2:Describe*",          // All Describe actions
+    "dynamodb:*"              // All DynamoDB actions
+  ]
+}
+```
+
+Use `NotAction` to match all actions except specified ones:
+
+```json title="NotAction Example"
+{
+  "Effect": "Deny",
+  "NotAction": [
+    "iam:ChangePassword",
+    "iam:GetUser"
+  ],
+  "Resource": "*"
+}
+```
+</Tab>
+<Tab value="Resource">
+Specifies the AWS resources the actions apply to. Uses ARN format.
+
+```json title="Resource Examples"
+{
+  "Resource": [
+    // Specific S3 object
+    "arn:aws:s3:::my-bucket/path/to/object.txt",
+    
+    // All objects in bucket
+    "arn:aws:s3:::my-bucket/*",
+    
+    // All buckets (for ListBuckets)
+    "*",
+    
+    // Specific DynamoDB table
+    "arn:aws:dynamodb:us-east-1:123456789012:table/Users",
+    
+    // All tables in region
+    "arn:aws:dynamodb:us-east-1:123456789012:table/*"
+  ]
+}
+```
+
+<Callout type="info">
+Some actions (like `s3:ListAllMyBuckets`) don't support resource-level permissions and require `"Resource": "*"`.
+</Callout>
+</Tab>
+<Tab value="Condition">
+Optional conditions that must be met for the statement to apply.
+
+```json title="Condition Examples"
+{
+  "Condition": {
+    // String conditions
+    "StringEquals": {
+      "aws:RequestedRegion": "us-east-1"
+    },
+    
+    // IP address conditions
+    "IpAddress": {
+      "aws:SourceIp": ["192.168.1.0/24", "10.0.0.0/8"]
+    },
+    
+    // Date conditions
+    "DateGreaterThan": {
+      "aws:CurrentTime": "2024-01-01T00:00:00Z"
+    },
+    
+    // Boolean conditions
+    "Bool": {
+      "aws:SecureTransport": "true"
+    },
+    
+    // MFA requirement
+    "Bool": {
+      "aws:MultiFactorAuthPresent": "true"
+    }
+  }
+}
+```
+</Tab>
+<Tab value="Principal">
+Specifies who is allowed or denied access. Only used in resource-based policies.
+
+```json title="Principal Examples"
+{
+  // Specific AWS account
+  "Principal": {
+    "AWS": "arn:aws:iam::123456789012:root"
+  },
+  
+  // Specific IAM user
+  "Principal": {
+    "AWS": "arn:aws:iam::123456789012:user/developer"
+  },
+  
+  // AWS service
+  "Principal": {
+    "Service": "lambda.amazonaws.com"
+  },
+  
+  // Everyone (public)
+  "Principal": "*",
+  
+  // Federated users
+  "Principal": {
+    "Federated": "arn:aws:iam::123456789012:saml-provider/ExampleProvider"
+  }
+}
+```
+</Tab>
+</Tabs>
+
+## Policy Types
+
+### Identity-Based Policies
+
+Attached to IAM users, groups, or roles.
+
+<Tabs items={['AWS Managed', 'Customer Managed', 'Inline']}>
+<Tab value="AWS Managed">
+Pre-built policies created and maintained by AWS.
+
+```bash title="List AWS Managed Policies"
+aws iam list-policies --scope AWS --query 'Policies[?starts_with(PolicyName, `Amazon`)].[PolicyName]' --output table
+```
+
+Common policies:
+- `AdministratorAccess` - Full access to all services
+- `ReadOnlyAccess` - Read-only access to all services
+- `PowerUserAccess` - Full access except IAM
+- `ViewOnlyAccess` - List and describe actions only
+</Tab>
+<Tab value="Customer Managed">
+Custom policies you create and manage.
+
+```bash title="Create Customer Managed Policy"
+aws iam create-policy \
+  --policy-name S3ReadOnlyAccess \
+  --policy-document file://policy.json \
+  --description "Read-only access to S3"
+```
+
+Benefits:
+- Version control (up to 5 versions)
+- Reusable across multiple entities
+- Central management
+</Tab>
+<Tab value="Inline">
+Embedded directly in a user, group, or role.
+
+```bash title="Create Inline Policy"
+aws iam put-user-policy \
+  --user-name developer \
+  --policy-name SpecificAccess \
+  --policy-document file://policy.json
+```
+
+<Callout type="warn">
+Prefer managed policies over inline policies. Inline policies are harder to manage and audit.
+</Callout>
+</Tab>
+</Tabs>
+
+### Resource-Based Policies
+
+Attached to resources (S3 buckets, SQS queues, etc.). Include a `Principal` element.
+
+```json title="S3 Bucket Policy"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowCrossAccountAccess",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::987654321098:root"
+      },
+      "Action": [
+        "s3:GetObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::my-bucket",
+        "arn:aws:s3:::my-bucket/*"
+      ]
+    }
+  ]
+}
+```
+
+## Common Policy Patterns
+
+### Least Privilege S3 Access
+
+```json title="s3-least-privilege.json"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListBucketContents",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::my-bucket",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": ["uploads/${aws:username}/*"]
+        }
+      }
+    },
+    {
+      "Sid": "ReadWriteUserFolder",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/uploads/${aws:username}/*"
+    }
+  ]
+}
+```
+
+### Require MFA for Sensitive Actions
+
+```json title="require-mfa.json"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowWithMFA",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:StopInstances",
+        "ec2:TerminateInstances"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "Bool": {
+          "aws:MultiFactorAuthPresent": "true"
+        }
+      }
+    }
+  ]
+}
+```
+
+### Restrict by IP Address
+
+```json title="ip-restriction.json"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyOutsideOffice",
+      "Effect": "Deny",
+      "Action": "*",
+      "Resource": "*",
+      "Condition": {
+        "NotIpAddress": {
+          "aws:SourceIp": [
+            "192.168.1.0/24",
+            "10.0.0.0/8"
+          ]
+        }
+      }
+    }
+  ]
+}
+```
+
+### Time-Based Access
+
+```json title="time-based.json"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowDuringBusinessHours",
+      "Effect": "Allow",
+      "Action": "ec2:*",
+      "Resource": "*",
+      "Condition": {
+        "DateGreaterThan": {
+          "aws:CurrentTime": "2024-01-01T09:00:00Z"
+        },
+        "DateLessThan": {
+          "aws:CurrentTime": "2024-12-31T18:00:00Z"
+        }
+      }
+    }
+  ]
+}
+```
+
+## Policy Variables
+
+Use dynamic values in policies:
+
+| Variable | Description |
+|----------|-------------|
+| `${aws:username}` | IAM user name |
+| `${aws:userid}` | Unique user ID |
+| `${aws:PrincipalTag/key}` | Principal's tag value |
+| `${aws:RequestTag/key}` | Tag in the request |
+| `${aws:ResourceTag/key}` | Resource's tag value |
+| `${aws:CurrentTime}` | Current date and time |
+| `${aws:SourceIp}` | Requester's IP address |
+
+```json title="Policy with Variables"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:*"],
+      "Resource": [
+        "arn:aws:s3:::company-data/home/${aws:username}/*"
+      ]
+    }
+  ]
+}
+```
+
+## Policy Validation
+
+### IAM Policy Simulator
+
+Test policies without applying them:
+
+```bash title="Simulate Policy"
+aws iam simulate-principal-policy \
+  --policy-source-arn arn:aws:iam::123456789012:user/developer \
+  --action-names s3:GetObject \
+  --resource-arns arn:aws:s3:::my-bucket/file.txt
+```
+
+### Access Analyzer
+
+Find resources shared with external entities:
+
+```bash title="Create Analyzer"
+aws accessanalyzer create-analyzer \
+  --analyzer-name policy-analyzer \
+  --type ACCOUNT
+```
+
+## Policy Limits
+
+| Limit | Value |
+|-------|-------|
+| Managed policies per account | 1,500 |
+| Managed policy size | 6,144 characters |
+| Inline policy size | 2,048 characters |
+| Policies per user/role/group | 10 managed + unlimited inline |
+| Policy versions | 5 |
+
+## Best Practices
+
+<Callout type="info" title="Policy Best Practices">
+1. **Start with least privilege** - Add permissions as needed
+2. **Use managed policies** - Easier to maintain and audit
+3. **Test with Policy Simulator** - Before applying to production
+4. **Use conditions** - Add constraints for extra security
+5. **Avoid wildcards** - Be specific about actions and resources
+6. **Regular audits** - Review policies periodically with Access Analyzer
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="IAM Best Practices" href="/docs/aws/iam/best-practices" description="Security recommendations" />
+  <Card title="IAM CLI" href="/docs/aws/iam/cli" description="Complete CLI reference" />
+</Cards>

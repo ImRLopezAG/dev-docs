@@ -1,0 +1,878 @@
+---
+title: Microsoft SQL Server
+description: Comprehensive guide to MS SQL Server including T-SQL, SSMS, sqlcmd, and SQL Server-specific features
+---
+
+Microsoft SQL Server is an enterprise-grade relational database management system known for its integration with the Microsoft ecosystem, advanced business intelligence features, and robust security. This guide covers SQL Server-specific features, T-SQL, and administration.
+
+## Installation
+
+### Windows
+
+Download SQL Server from Microsoft:
+- **SQL Server Express**: Free edition for development and small applications
+- **SQL Server Developer**: Free for development/testing (full features)
+- **SQL Server Standard/Enterprise**: Production licenses
+
+```powershell
+# Install via Chocolatey
+choco install sql-server-express
+
+# Install SSMS (SQL Server Management Studio)
+choco install sql-server-management-studio
+```
+
+### Linux (Ubuntu)
+
+```bash
+# Import Microsoft GPG key
+curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+
+# Add repository
+sudo add-apt-repository "$(curl https://packages.microsoft.com/config/ubuntu/20.04/mssql-server-2022.list)"
+
+# Install SQL Server
+sudo apt-get update
+sudo apt-get install -y mssql-server
+
+# Run setup
+sudo /opt/mssql/bin/mssql-conf setup
+
+# Install command-line tools
+sudo apt-get install mssql-tools unixodbc-dev
+echo 'export PATH="$PATH:/opt/mssql-tools/bin"' >> ~/.bashrc
+```
+
+### Docker
+
+```bash
+# Run SQL Server container
+docker run -d \
+  --name sqlserver \
+  -e "ACCEPT_EULA=Y" \
+  -e "MSSQL_SA_PASSWORD=YourStrong@Password" \
+  -p 1433:1433 \
+  -v sqlserver_data:/var/opt/mssql \
+  mcr.microsoft.com/mssql/server:2022-latest
+
+# Connect using sqlcmd
+docker exec -it sqlserver /opt/mssql-tools/bin/sqlcmd \
+  -S localhost -U sa -P "YourStrong@Password"
+```
+
+## sqlcmd CLI Reference
+
+### Connection
+
+```bash
+# Basic connection
+sqlcmd -S localhost -U sa -P "YourPassword"
+
+# Windows authentication
+sqlcmd -S localhost -E
+
+# Specific database
+sqlcmd -S localhost -U sa -P "YourPassword" -d mydatabase
+
+# Azure SQL Database
+sqlcmd -S yourserver.database.windows.net -U username -P "Password" -d database
+
+# Execute query
+sqlcmd -S localhost -U sa -P "Password" -Q "SELECT @@VERSION"
+
+# Execute script file
+sqlcmd -S localhost -U sa -P "Password" -i script.sql -o output.txt
+```
+
+### sqlcmd Commands
+
+```sql
+-- List databases
+SELECT name FROM sys.databases;
+GO
+
+-- Use database
+USE mydatabase;
+GO
+
+-- Run external script
+:r C:\scripts\myquery.sql
+
+-- Set variables
+:setvar TableName "users"
+SELECT * FROM $(TableName);
+GO
+
+-- Exit
+:exit
+-- or
+QUIT
+
+-- Help
+:help
+```
+
+## T-SQL Fundamentals
+
+### Database Management
+
+```sql
+-- Create database
+CREATE DATABASE MyDatabase
+ON PRIMARY (
+    NAME = 'MyDatabase_Data',
+    FILENAME = 'C:\Data\MyDatabase.mdf',
+    SIZE = 100MB,
+    MAXSIZE = UNLIMITED,
+    FILEGROWTH = 10MB
+)
+LOG ON (
+    NAME = 'MyDatabase_Log',
+    FILENAME = 'C:\Data\MyDatabase.ldf',
+    SIZE = 50MB,
+    FILEGROWTH = 5MB
+);
+GO
+
+-- Alter database
+ALTER DATABASE MyDatabase SET RECOVERY SIMPLE;
+ALTER DATABASE MyDatabase SET AUTO_SHRINK OFF;
+
+-- Drop database
+DROP DATABASE IF EXISTS MyDatabase;
+
+-- Backup database
+BACKUP DATABASE MyDatabase 
+TO DISK = 'C:\Backups\MyDatabase.bak'
+WITH COMPRESSION, STATS = 10;
+
+-- Restore database
+RESTORE DATABASE MyDatabase 
+FROM DISK = 'C:\Backups\MyDatabase.bak'
+WITH REPLACE, RECOVERY;
+```
+
+### Table Creation
+
+```sql
+-- Create table with all features
+CREATE TABLE Users (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    Email NVARCHAR(255) NOT NULL UNIQUE,
+    PasswordHash VARBINARY(64) NOT NULL,
+    FirstName NVARCHAR(100),
+    LastName NVARCHAR(100),
+    Status TINYINT DEFAULT 1,
+    CreatedAt DATETIME2 DEFAULT SYSDATETIME(),
+    UpdatedAt DATETIME2,
+    CONSTRAINT CHK_Status CHECK (Status IN (0, 1, 2)),
+    INDEX IX_Users_Status NONCLUSTERED (Status)
+);
+GO
+
+-- Temporal table (System-Versioned)
+CREATE TABLE Products (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    Name NVARCHAR(255) NOT NULL,
+    Price DECIMAL(10,2) NOT NULL,
+    ValidFrom DATETIME2 GENERATED ALWAYS AS ROW START,
+    ValidTo DATETIME2 GENERATED ALWAYS AS ROW END,
+    PERIOD FOR SYSTEM_TIME (ValidFrom, ValidTo)
+) WITH (SYSTEM_VERSIONING = ON (HISTORY_TABLE = dbo.ProductsHistory));
+GO
+```
+
+### Data Types
+
+```sql
+-- Numeric types
+BIT                -- 0, 1, NULL
+TINYINT            -- 0 to 255
+SMALLINT           -- -32,768 to 32,767
+INT                -- -2.1B to 2.1B
+BIGINT             -- -9.2E18 to 9.2E18
+DECIMAL(18, 2)     -- Exact precision
+MONEY              -- -922T to 922T
+FLOAT              -- Approximate
+
+-- String types
+CHAR(50)           -- Fixed-length (non-Unicode)
+VARCHAR(255)       -- Variable-length (non-Unicode)
+VARCHAR(MAX)       -- Up to 2GB (non-Unicode)
+NCHAR(50)          -- Fixed-length (Unicode)
+NVARCHAR(255)      -- Variable-length (Unicode)
+NVARCHAR(MAX)      -- Up to 2GB (Unicode)
+
+-- Date/Time types
+DATE               -- 'YYYY-MM-DD'
+TIME               -- 'HH:MM:SS.nnnnnnn'
+DATETIME           -- Legacy, 3.33ms precision
+DATETIME2          -- 100ns precision (recommended)
+DATETIMEOFFSET     -- With timezone
+SMALLDATETIME      -- 1-minute precision
+
+-- Binary types
+BINARY(50)
+VARBINARY(MAX)
+
+-- Other types
+UNIQUEIDENTIFIER   -- GUID/UUID
+XML                -- XML data
+JSON               -- Stored as NVARCHAR, validated
+GEOGRAPHY          -- Spatial data
+GEOMETRY           -- Planar spatial data
+HIERARCHYID        -- Tree structures
+```
+
+## T-SQL Specific Features
+
+### Common Table Expressions (CTE)
+
+```sql
+-- Basic CTE
+WITH ActiveUsers AS (
+    SELECT Id, Email, FirstName, LastName
+    FROM Users
+    WHERE Status = 1
+)
+SELECT * FROM ActiveUsers WHERE Email LIKE '%@company.com';
+
+-- Recursive CTE
+WITH OrgChart AS (
+    -- Anchor: Top-level employees
+    SELECT Id, Name, ManagerId, 0 AS Level
+    FROM Employees
+    WHERE ManagerId IS NULL
+    
+    UNION ALL
+    
+    -- Recursive: Employees with managers
+    SELECT e.Id, e.Name, e.ManagerId, oc.Level + 1
+    FROM Employees e
+    INNER JOIN OrgChart oc ON e.ManagerId = oc.Id
+)
+SELECT * FROM OrgChart ORDER BY Level, Name;
+```
+
+### MERGE Statement (Upsert)
+
+```sql
+-- Merge/Upsert pattern
+MERGE INTO TargetTable AS target
+USING SourceTable AS source
+ON target.Id = source.Id
+WHEN MATCHED THEN
+    UPDATE SET 
+        target.Name = source.Name,
+        target.UpdatedAt = SYSDATETIME()
+WHEN NOT MATCHED BY TARGET THEN
+    INSERT (Id, Name, CreatedAt)
+    VALUES (source.Id, source.Name, SYSDATETIME())
+WHEN NOT MATCHED BY SOURCE THEN
+    DELETE
+OUTPUT $action, inserted.*, deleted.*;
+```
+
+### OUTPUT Clause
+
+```sql
+-- Capture inserted rows
+INSERT INTO Users (Email, FirstName)
+OUTPUT inserted.Id, inserted.Email, inserted.CreatedAt
+VALUES ('john@example.com', 'John');
+
+-- Capture updated rows (before and after)
+UPDATE Users
+SET Status = 2
+OUTPUT deleted.Status AS OldStatus, inserted.Status AS NewStatus, inserted.Email
+WHERE Status = 1 AND CreatedAt < DATEADD(YEAR, -1, GETDATE());
+
+-- Capture deleted rows
+DELETE FROM Users
+OUTPUT deleted.*
+WHERE Status = 0;
+```
+
+### Window Functions
+
+```sql
+-- Row numbering
+SELECT 
+    Name,
+    Department,
+    Salary,
+    ROW_NUMBER() OVER (ORDER BY Salary DESC) AS RowNum,
+    ROW_NUMBER() OVER (PARTITION BY Department ORDER BY Salary DESC) AS DeptRank
+FROM Employees;
+
+-- Running totals and aggregates
+SELECT 
+    OrderDate,
+    Amount,
+    SUM(Amount) OVER (ORDER BY OrderDate ROWS UNBOUNDED PRECEDING) AS RunningTotal,
+    AVG(Amount) OVER (ORDER BY OrderDate ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS MovingAvg7Day
+FROM Orders;
+
+-- LAG and LEAD
+SELECT 
+    OrderDate,
+    Amount,
+    LAG(Amount, 1, 0) OVER (ORDER BY OrderDate) AS PrevAmount,
+    LEAD(Amount, 1) OVER (ORDER BY OrderDate) AS NextAmount
+FROM Orders;
+
+-- FIRST_VALUE and LAST_VALUE
+SELECT 
+    Name,
+    Department,
+    Salary,
+    FIRST_VALUE(Name) OVER (PARTITION BY Department ORDER BY Salary DESC) AS TopEarner
+FROM Employees;
+
+-- PERCENTILE
+SELECT DISTINCT
+    Department,
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY Salary) OVER (PARTITION BY Department) AS MedianSalary,
+    PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY Salary) OVER (PARTITION BY Department) AS MedianSalaryDiscrete
+FROM Employees;
+```
+
+### PIVOT and UNPIVOT
+
+```sql
+-- PIVOT: Rows to columns
+SELECT *
+FROM (
+    SELECT Year, Quarter, Revenue
+    FROM Sales
+) AS SourceTable
+PIVOT (
+    SUM(Revenue)
+    FOR Quarter IN ([Q1], [Q2], [Q3], [Q4])
+) AS PivotTable;
+
+-- UNPIVOT: Columns to rows
+SELECT Year, Quarter, Revenue
+FROM (
+    SELECT Year, Q1, Q2, Q3, Q4
+    FROM YearlySales
+) AS SourceTable
+UNPIVOT (
+    Revenue FOR Quarter IN (Q1, Q2, Q3, Q4)
+) AS UnpivotTable;
+```
+
+### TRY...CATCH Error Handling
+
+```sql
+BEGIN TRY
+    BEGIN TRANSACTION;
+    
+    UPDATE Accounts SET Balance = Balance - 100 WHERE Id = 1;
+    UPDATE Accounts SET Balance = Balance + 100 WHERE Id = 2;
+    
+    COMMIT TRANSACTION;
+END TRY
+BEGIN CATCH
+    IF @@TRANCOUNT > 0
+        ROLLBACK TRANSACTION;
+    
+    -- Get error information
+    SELECT 
+        ERROR_NUMBER() AS ErrorNumber,
+        ERROR_SEVERITY() AS ErrorSeverity,
+        ERROR_STATE() AS ErrorState,
+        ERROR_PROCEDURE() AS ErrorProcedure,
+        ERROR_LINE() AS ErrorLine,
+        ERROR_MESSAGE() AS ErrorMessage;
+    
+    -- Re-throw error
+    THROW;
+END CATCH;
+```
+
+## Stored Procedures
+
+```sql
+-- Create procedure with parameters
+CREATE OR ALTER PROCEDURE dbo.GetCustomerOrders
+    @CustomerId INT,
+    @StartDate DATE = NULL,
+    @EndDate DATE = NULL,
+    @TotalOrders INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    SELECT 
+        o.Id,
+        o.OrderDate,
+        o.Total,
+        o.Status
+    FROM Orders o
+    WHERE o.CustomerId = @CustomerId
+        AND (@StartDate IS NULL OR o.OrderDate >= @StartDate)
+        AND (@EndDate IS NULL OR o.OrderDate <= @EndDate)
+    ORDER BY o.OrderDate DESC;
+    
+    SELECT @TotalOrders = @@ROWCOUNT;
+END;
+GO
+
+-- Execute procedure
+DECLARE @OrderCount INT;
+EXEC dbo.GetCustomerOrders 
+    @CustomerId = 123, 
+    @StartDate = '2024-01-01',
+    @TotalOrders = @OrderCount OUTPUT;
+SELECT @OrderCount AS TotalOrders;
+
+-- Procedure with table-valued parameter
+CREATE TYPE dbo.OrderItemsType AS TABLE (
+    ProductId INT,
+    Quantity INT,
+    Price DECIMAL(10,2)
+);
+GO
+
+CREATE PROCEDURE dbo.CreateOrder
+    @CustomerId INT,
+    @Items dbo.OrderItemsType READONLY
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    DECLARE @OrderId INT;
+    
+    INSERT INTO Orders (CustomerId, OrderDate, Total)
+    VALUES (@CustomerId, SYSDATETIME(), (SELECT SUM(Quantity * Price) FROM @Items));
+    
+    SET @OrderId = SCOPE_IDENTITY();
+    
+    INSERT INTO OrderItems (OrderId, ProductId, Quantity, Price)
+    SELECT @OrderId, ProductId, Quantity, Price FROM @Items;
+    
+    SELECT @OrderId AS OrderId;
+END;
+GO
+```
+
+## Functions
+
+### Scalar Functions
+
+```sql
+CREATE OR ALTER FUNCTION dbo.CalculateAge(@BirthDate DATE)
+RETURNS INT
+AS
+BEGIN
+    RETURN DATEDIFF(YEAR, @BirthDate, GETDATE()) - 
+        CASE 
+            WHEN DATEADD(YEAR, DATEDIFF(YEAR, @BirthDate, GETDATE()), @BirthDate) > GETDATE() 
+            THEN 1 
+            ELSE 0 
+        END;
+END;
+GO
+
+-- Use function
+SELECT Name, BirthDate, dbo.CalculateAge(BirthDate) AS Age FROM Employees;
+```
+
+### Table-Valued Functions
+
+```sql
+-- Inline TVF (preferred for performance)
+CREATE OR ALTER FUNCTION dbo.GetRecentOrders(@Days INT)
+RETURNS TABLE
+AS
+RETURN (
+    SELECT Id, CustomerId, OrderDate, Total
+    FROM Orders
+    WHERE OrderDate >= DATEADD(DAY, -@Days, GETDATE())
+);
+GO
+
+-- Use inline TVF
+SELECT * FROM dbo.GetRecentOrders(30);
+
+-- Multi-statement TVF
+CREATE OR ALTER FUNCTION dbo.GetCustomerSummary(@CustomerId INT)
+RETURNS @Summary TABLE (
+    TotalOrders INT,
+    TotalSpent DECIMAL(18,2),
+    AverageOrder DECIMAL(18,2),
+    LastOrderDate DATE
+)
+AS
+BEGIN
+    INSERT INTO @Summary
+    SELECT 
+        COUNT(*),
+        SUM(Total),
+        AVG(Total),
+        MAX(OrderDate)
+    FROM Orders
+    WHERE CustomerId = @CustomerId;
+    
+    RETURN;
+END;
+GO
+```
+
+## Indexes
+
+### Index Types
+
+```sql
+-- Clustered index (table order)
+CREATE CLUSTERED INDEX IX_Orders_OrderDate ON Orders (OrderDate);
+
+-- Non-clustered index
+CREATE NONCLUSTERED INDEX IX_Users_Email ON Users (Email);
+
+-- Unique index
+CREATE UNIQUE INDEX IX_Users_Email_Unique ON Users (Email);
+
+-- Composite index
+CREATE INDEX IX_Orders_Customer_Date ON Orders (CustomerId, OrderDate DESC);
+
+-- Covering index (INCLUDE)
+CREATE INDEX IX_Orders_Covering ON Orders (CustomerId)
+INCLUDE (Total, Status, OrderDate);
+
+-- Filtered index
+CREATE INDEX IX_Orders_Pending ON Orders (OrderDate)
+WHERE Status = 'Pending';
+
+-- Columnstore index (for analytics)
+CREATE NONCLUSTERED COLUMNSTORE INDEX IX_Sales_Columnstore
+ON Sales (ProductId, CustomerId, Quantity, Amount, SaleDate);
+
+-- Full-text index
+CREATE FULLTEXT CATALOG ProductCatalog;
+CREATE FULLTEXT INDEX ON Products(Name, Description)
+KEY INDEX PK_Products ON ProductCatalog;
+```
+
+### Index Maintenance
+
+```sql
+-- Check index fragmentation
+SELECT 
+    OBJECT_NAME(ips.object_id) AS TableName,
+    i.name AS IndexName,
+    ips.avg_fragmentation_in_percent,
+    ips.page_count
+FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, 'LIMITED') ips
+JOIN sys.indexes i ON ips.object_id = i.object_id AND ips.index_id = i.index_id
+WHERE ips.avg_fragmentation_in_percent > 10
+ORDER BY ips.avg_fragmentation_in_percent DESC;
+
+-- Rebuild index (offline)
+ALTER INDEX IX_Users_Email ON Users REBUILD;
+
+-- Rebuild index (online)
+ALTER INDEX IX_Users_Email ON Users REBUILD WITH (ONLINE = ON);
+
+-- Reorganize index (less intrusive)
+ALTER INDEX IX_Users_Email ON Users REORGANIZE;
+
+-- Update statistics
+UPDATE STATISTICS Users;
+UPDATE STATISTICS Users IX_Users_Email;
+
+-- Rebuild all indexes on table
+ALTER INDEX ALL ON Users REBUILD;
+```
+
+## Query Performance
+
+### Execution Plans
+
+```sql
+-- Show estimated plan
+SET SHOWPLAN_TEXT ON;
+GO
+SELECT * FROM Users WHERE Email = 'john@example.com';
+GO
+SET SHOWPLAN_TEXT OFF;
+GO
+
+-- Show actual execution plan (in SSMS)
+SET STATISTICS PROFILE ON;
+
+-- Show query statistics
+SET STATISTICS TIME ON;
+SET STATISTICS IO ON;
+SELECT * FROM Users WHERE Email = 'john@example.com';
+SET STATISTICS TIME OFF;
+SET STATISTICS IO OFF;
+
+-- Query store (performance history)
+ALTER DATABASE MyDatabase SET QUERY_STORE = ON;
+
+-- View query store data
+SELECT TOP 20
+    q.query_id,
+    qt.query_sql_text,
+    rs.avg_duration / 1000000.0 AS avg_duration_sec,
+    rs.count_executions
+FROM sys.query_store_query q
+JOIN sys.query_store_query_text qt ON q.query_text_id = qt.query_text_id
+JOIN sys.query_store_plan p ON q.query_id = p.query_id
+JOIN sys.query_store_runtime_stats rs ON p.plan_id = rs.plan_id
+ORDER BY rs.avg_duration DESC;
+```
+
+### Query Hints
+
+```sql
+-- Index hint
+SELECT * FROM Users WITH (INDEX(IX_Users_Email)) WHERE Email = 'john@example.com';
+
+-- Table hints
+SELECT * FROM Users WITH (NOLOCK);  -- Read uncommitted
+SELECT * FROM Users WITH (READPAST);  -- Skip locked rows
+SELECT * FROM Users WITH (TABLOCK);  -- Table lock
+
+-- Query hints
+SELECT * FROM Orders
+OPTION (MAXDOP 4);  -- Limit parallelism
+
+SELECT * FROM Orders
+OPTION (RECOMPILE);  -- Force new plan
+
+SELECT * FROM Orders
+OPTION (OPTIMIZE FOR (@CustomerId = 123));  -- Optimize for value
+```
+
+## Transactions
+
+```sql
+-- Basic transaction
+BEGIN TRANSACTION;
+    UPDATE Accounts SET Balance = Balance - 100 WHERE Id = 1;
+    UPDATE Accounts SET Balance = Balance + 100 WHERE Id = 2;
+COMMIT TRANSACTION;
+
+-- Named transaction
+BEGIN TRANSACTION TransferFunds;
+    -- Statements
+COMMIT TRANSACTION TransferFunds;
+
+-- Savepoints
+BEGIN TRANSACTION;
+    INSERT INTO Orders (CustomerId, Total) VALUES (1, 100);
+    SAVE TRANSACTION OrderCreated;
+    
+    INSERT INTO OrderItems (OrderId, ProductId) VALUES (1, 1);
+    -- Error occurred
+    ROLLBACK TRANSACTION OrderCreated;
+    
+COMMIT TRANSACTION;
+
+-- Isolation levels
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;  -- Default
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+SET TRANSACTION ISOLATION LEVEL SNAPSHOT;
+```
+
+## Security
+
+### User Management
+
+```sql
+-- Create login
+CREATE LOGIN AppUser WITH PASSWORD = 'StrongPassword123!';
+
+-- Create database user
+USE MyDatabase;
+CREATE USER AppUser FOR LOGIN AppUser;
+
+-- Create role
+CREATE ROLE ReadWriteRole;
+GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::dbo TO ReadWriteRole;
+
+-- Add user to role
+ALTER ROLE ReadWriteRole ADD MEMBER AppUser;
+
+-- Grant specific permissions
+GRANT SELECT ON Users TO AppUser;
+GRANT EXECUTE ON dbo.GetCustomerOrders TO AppUser;
+
+-- Deny permissions
+DENY DELETE ON Users TO AppUser;
+
+-- View permissions
+SELECT * FROM fn_my_permissions(NULL, 'DATABASE');
+```
+
+### Row-Level Security
+
+```sql
+-- Create security predicate function
+CREATE FUNCTION dbo.SecurityPredicate(@TenantId INT)
+RETURNS TABLE
+WITH SCHEMABINDING
+AS
+RETURN SELECT 1 AS Result WHERE @TenantId = CAST(SESSION_CONTEXT(N'TenantId') AS INT);
+GO
+
+-- Create security policy
+CREATE SECURITY POLICY TenantFilter
+ADD FILTER PREDICATE dbo.SecurityPredicate(TenantId) ON dbo.Orders,
+ADD BLOCK PREDICATE dbo.SecurityPredicate(TenantId) ON dbo.Orders;
+
+-- Set tenant context
+EXEC sp_set_session_context @key = N'TenantId', @value = 123;
+
+-- Queries now automatically filter by tenant
+SELECT * FROM Orders;  -- Only returns TenantId = 123
+```
+
+### Dynamic Data Masking
+
+```sql
+-- Add masking to columns
+ALTER TABLE Users
+ALTER COLUMN Email ADD MASKED WITH (FUNCTION = 'email()');
+
+ALTER TABLE Users
+ALTER COLUMN Phone ADD MASKED WITH (FUNCTION = 'partial(0,"XXX-XXX-",4)');
+
+ALTER TABLE Users
+ALTER COLUMN SSN ADD MASKED WITH (FUNCTION = 'default()');
+
+-- Grant UNMASK permission
+GRANT UNMASK TO PrivilegedUser;
+```
+
+## Backup and Recovery
+
+```sql
+-- Full backup
+BACKUP DATABASE MyDatabase 
+TO DISK = 'C:\Backups\MyDatabase_Full.bak'
+WITH COMPRESSION, STATS = 10, CHECKSUM;
+
+-- Differential backup
+BACKUP DATABASE MyDatabase 
+TO DISK = 'C:\Backups\MyDatabase_Diff.bak'
+WITH DIFFERENTIAL, COMPRESSION;
+
+-- Transaction log backup
+BACKUP LOG MyDatabase 
+TO DISK = 'C:\Backups\MyDatabase_Log.trn';
+
+-- Restore full backup
+RESTORE DATABASE MyDatabase 
+FROM DISK = 'C:\Backups\MyDatabase_Full.bak'
+WITH REPLACE, NORECOVERY;
+
+-- Restore differential
+RESTORE DATABASE MyDatabase 
+FROM DISK = 'C:\Backups\MyDatabase_Diff.bak'
+WITH NORECOVERY;
+
+-- Restore transaction log
+RESTORE LOG MyDatabase 
+FROM DISK = 'C:\Backups\MyDatabase_Log.trn'
+WITH RECOVERY;
+
+-- Point-in-time recovery
+RESTORE DATABASE MyDatabase 
+FROM DISK = 'C:\Backups\MyDatabase_Full.bak'
+WITH NORECOVERY;
+
+RESTORE LOG MyDatabase 
+FROM DISK = 'C:\Backups\MyDatabase_Log.trn'
+WITH STOPAT = '2024-06-15 14:30:00', RECOVERY;
+```
+
+## Common Patterns
+
+### Pagination
+
+```sql
+-- OFFSET-FETCH (SQL Server 2012+)
+SELECT Id, Name, Email
+FROM Users
+ORDER BY Id
+OFFSET 20 ROWS
+FETCH NEXT 10 ROWS ONLY;
+
+-- With total count
+SELECT 
+    Id, Name, Email,
+    COUNT(*) OVER() AS TotalCount
+FROM Users
+ORDER BY Id
+OFFSET 20 ROWS
+FETCH NEXT 10 ROWS ONLY;
+
+-- Keyset pagination (more efficient)
+SELECT TOP 10 Id, Name, Email
+FROM Users
+WHERE Id > @LastId
+ORDER BY Id;
+```
+
+### JSON Support
+
+```sql
+-- Parse JSON
+DECLARE @json NVARCHAR(MAX) = '{"name": "John", "age": 30, "tags": ["sql", "database"]}';
+
+SELECT 
+    JSON_VALUE(@json, '$.name') AS Name,
+    JSON_VALUE(@json, '$.age') AS Age,
+    JSON_QUERY(@json, '$.tags') AS Tags;
+
+-- Query JSON columns
+SELECT Id, Name
+FROM Products
+WHERE JSON_VALUE(Attributes, '$.color') = 'red';
+
+-- Build JSON
+SELECT Id, Name, Email
+FROM Users
+FOR JSON PATH;
+
+-- Pretty print
+SELECT Id, Name, Email
+FROM Users
+FOR JSON PATH, ROOT('users');
+
+-- OPENJSON
+SELECT *
+FROM OPENJSON(@json)
+WITH (
+    Name NVARCHAR(100) '$.name',
+    Age INT '$.age',
+    Tags NVARCHAR(MAX) '$.tags' AS JSON
+);
+```
+
+### Temporal Tables
+
+```sql
+-- Query historical data
+SELECT * FROM Products 
+FOR SYSTEM_TIME AS OF '2024-01-01 00:00:00';
+
+-- Query all versions
+SELECT * FROM Products 
+FOR SYSTEM_TIME ALL
+WHERE Id = 1;
+
+-- Query between dates
+SELECT * FROM Products 
+FOR SYSTEM_TIME FROM '2024-01-01' TO '2024-06-01';
+
+-- Query contained in period
+SELECT * FROM Products 
+FOR SYSTEM_TIME CONTAINED IN ('2024-01-01', '2024-06-01');
+```

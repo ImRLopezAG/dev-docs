@@ -1,0 +1,6 @@
+{
+	"title": "CloudFormation",
+	"description": "Infrastructure as Code",
+	"icon": "Layers",
+	"pages": ["index", "cli"]
+}

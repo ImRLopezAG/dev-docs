@@ -1,0 +1,12 @@
+{
+	"title": "Clean Architecture",
+	"description": "Architecture patterns and design principles for building maintainable software",
+	"icon": "Layers",
+	"pages": [
+		"index",
+		"hexagonal",
+		"layered",
+		"microservices",
+		"clean-architecture"
+	]
+}

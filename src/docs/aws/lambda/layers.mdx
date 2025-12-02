@@ -1,0 +1,456 @@
+---
+title: Lambda Layers
+description: Package and share code, libraries, and dependencies across Lambda functions
+---
+
+Lambda layers allow you to package libraries, custom runtimes, and other dependencies separately from your function code. This promotes code reuse and keeps deployment packages small.
+
+## Understanding Layers
+
+<Callout type="info" title="Key Benefits">
+- **Code sharing**: Reuse common code across multiple functions
+- **Smaller packages**: Keep function deployment packages small
+- **Separation of concerns**: Update dependencies independently
+- **Faster deployments**: Only update what changed
+</Callout>
+
+## Layer Structure
+
+Layers must follow a specific directory structure based on the runtime:
+
+<Tabs items={['Node.js', 'Python', 'Custom Runtime']}>
+<Tab value="Node.js">
+```text title="Node.js layer structure"
+layer.zip
+└── nodejs/
+    ├── node_modules/
+    │   ├── axios/
+    │   ├── lodash/
+    │   └── ... other packages
+    └── package.json (optional)
+```
+
+The `nodejs/node_modules` path is automatically added to `NODE_PATH`.
+</Tab>
+<Tab value="Python">
+```text title="Python layer structure"
+layer.zip
+└── python/
+    ├── lib/
+    │   └── python3.11/
+    │       └── site-packages/
+    │           ├── requests/
+    │           └── ... other packages
+    └── ... or directly under python/
+```
+
+You can place packages directly under `python/` or use the full path structure.
+</Tab>
+<Tab value="Custom Runtime">
+```text title="Custom runtime layer structure"
+layer.zip
+├── bin/
+│   └── bootstrap (executable)
+└── lib/
+    └── ... runtime libraries
+```
+</Tab>
+</Tabs>
+
+## Creating a Layer
+
+<Steps>
+<Step>
+### Prepare Dependencies
+
+<Tabs items={['Node.js', 'Python']}>
+<Tab value="Node.js">
+```bash title="Create Node.js layer"
+mkdir -p layer/nodejs
+cd layer/nodejs
+
+# Install dependencies
+npm init -y
+npm install axios lodash dayjs
+
+# Go back and zip
+cd ..
+zip -r my-layer.zip nodejs/
+```
+</Tab>
+<Tab value="Python">
+```bash title="Create Python layer"
+mkdir -p layer/python
+cd layer
+
+# Install to the python directory
+pip install requests boto3 -t python/
+
+# Zip the layer
+zip -r my-layer.zip python/
+```
+
+<Callout type="warn">
+For Python, use a compatible environment (e.g., Amazon Linux 2) or Docker to build layers with compiled dependencies.
+</Callout>
+</Tab>
+</Tabs>
+</Step>
+<Step>
+### Publish the Layer
+
+```bash title="Publish layer version"
+aws lambda publish-layer-version \
+  --layer-name my-dependencies \
+  --description "Common dependencies for my functions" \
+  --zip-file fileb://my-layer.zip \
+  --compatible-runtimes nodejs18.x nodejs20.x \
+  --compatible-architectures x86_64 arm64
+```
+</Step>
+<Step>
+### Attach to Function
+
+```bash title="Add layer to function"
+aws lambda update-function-configuration \
+  --function-name my-function \
+  --layers "arn:aws:lambda:us-east-1:123456789012:layer:my-dependencies:1"
+```
+</Step>
+</Steps>
+
+## Layer Versions
+
+Each layer publication creates a new immutable version:
+
+```bash title="List layer versions"
+aws lambda list-layer-versions \
+  --layer-name my-dependencies
+```
+
+```bash title="Get layer version details"
+aws lambda get-layer-version \
+  --layer-name my-dependencies \
+  --version-number 1
+```
+
+```bash title="Delete layer version"
+aws lambda delete-layer-version \
+  --layer-name my-dependencies \
+  --version-number 1
+```
+
+<Callout type="info">
+Layer versions are immutable. To update a layer, publish a new version and update your functions to use it.
+</Callout>
+
+## Using Multiple Layers
+
+Functions can use up to 5 layers:
+
+```bash title="Attach multiple layers"
+aws lambda update-function-configuration \
+  --function-name my-function \
+  --layers \
+    "arn:aws:lambda:us-east-1:123456789012:layer:common-utils:3" \
+    "arn:aws:lambda:us-east-1:123456789012:layer:aws-sdk-v3:2" \
+    "arn:aws:lambda:us-east-1:123456789012:layer:monitoring:1"
+```
+
+<Callout type="warn" title="Layer Order Matters">
+Layers are extracted in order. If multiple layers contain the same file, the last layer wins.
+</Callout>
+
+## Building Layers with Docker
+
+For compiled dependencies or specific OS requirements:
+
+<Tabs items={['Node.js', 'Python']}>
+<Tab value="Node.js">
+```dockerfile title="Dockerfile.layer"
+FROM public.ecr.aws/lambda/nodejs:20
+
+WORKDIR /opt
+
+# Copy package.json
+COPY package.json .
+
+# Install dependencies
+RUN npm install --production
+
+# Move to correct location
+RUN mkdir -p nodejs && mv node_modules nodejs/
+```
+
+```bash title="Build with Docker"
+docker build -f Dockerfile.layer -t node-layer-builder .
+docker create --name extract node-layer-builder
+docker cp extract:/opt/nodejs ./layer/
+docker rm extract
+cd layer && zip -r ../my-layer.zip nodejs/
+```
+</Tab>
+<Tab value="Python">
+```dockerfile title="Dockerfile.layer"
+FROM public.ecr.aws/lambda/python:3.11
+
+WORKDIR /opt
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install -r requirements.txt -t python/
+```
+
+```bash title="Build with Docker"
+docker build -f Dockerfile.layer -t python-layer-builder .
+docker create --name extract python-layer-builder
+docker cp extract:/opt/python ./layer/
+docker rm extract
+cd layer && zip -r ../my-layer.zip python/
+```
+</Tab>
+</Tabs>
+
+## AWS-Provided Layers
+
+AWS provides layers for common use cases:
+
+### AWS Parameters and Secrets Lambda Extension
+
+```bash title="Add secrets extension"
+aws lambda update-function-configuration \
+  --function-name my-function \
+  --layers "arn:aws:lambda:us-east-1:177933569100:layer:AWS-Parameters-and-Secrets-Lambda-Extension:11"
+```
+
+```javascript title="Using secrets extension"
+// Secrets are available at localhost:2773
+const response = await fetch(
+  'http://localhost:2773/secretsmanager/get?secretId=my-secret',
+  { headers: { 'X-Aws-Parameters-Secrets-Token': process.env.AWS_SESSION_TOKEN } }
+);
+const secret = await response.json();
+```
+
+### AWS Lambda Powertools
+
+```bash title="Add Powertools layer"
+# Python
+aws lambda update-function-configuration \
+  --function-name my-function \
+  --layers "arn:aws:lambda:us-east-1:017000801446:layer:AWSLambdaPowertoolsPythonV2:51"
+
+# TypeScript
+aws lambda update-function-configuration \
+  --function-name my-function \
+  --layers "arn:aws:lambda:us-east-1:094274105915:layer:AWSLambdaPowertoolsTypeScriptV2:1"
+```
+
+## Sharing Layers
+
+### Cross-Account Sharing
+
+```bash title="Grant cross-account access"
+aws lambda add-layer-version-permission \
+  --layer-name my-dependencies \
+  --version-number 1 \
+  --statement-id cross-account-access \
+  --principal 987654321098 \
+  --action lambda:GetLayerVersion
+```
+
+### Public Layers
+
+```bash title="Make layer public"
+aws lambda add-layer-version-permission \
+  --layer-name my-public-layer \
+  --version-number 1 \
+  --statement-id public-access \
+  --principal "*" \
+  --action lambda:GetLayerVersion
+```
+
+<Callout type="warn">
+Be careful with public layers. Anyone can use them, increasing your responsibility for security and maintenance.
+</Callout>
+
+## Common Layer Patterns
+
+### Utility Functions Layer
+
+```javascript title="utils/index.js"
+// Common utilities shared across functions
+export const formatDate = (date) => {
+  return new Intl.DateTimeFormat('en-US').format(date);
+};
+
+export const validateEmail = (email) => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+};
+
+export const generateId = () => {
+  return crypto.randomUUID();
+};
+```
+
+```text title="Utils layer structure"
+layer.zip
+└── nodejs/
+    └── node_modules/
+        └── utils/
+            └── index.js
+```
+
+### Shared Configuration Layer
+
+```javascript title="config/index.js"
+export const config = {
+  api: {
+    timeout: 30000,
+    retries: 3
+  },
+  logging: {
+    level: process.env.LOG_LEVEL || 'info'
+  },
+  features: {
+    newFeature: process.env.ENABLE_NEW_FEATURE === 'true'
+  }
+};
+```
+
+### Database Connection Layer
+
+```javascript title="db/index.js"
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+
+// Reuse connection across invocations
+let docClient;
+
+export const getDocClient = () => {
+  if (!docClient) {
+    const client = new DynamoDBClient({});
+    docClient = DynamoDBDocumentClient.from(client);
+  }
+  return docClient;
+};
+```
+
+## Layer Limitations
+
+| Limit | Value |
+|-------|-------|
+| Maximum layers per function | 5 |
+| Total unzipped size (function + layers) | 250 MB |
+| Layer versions per layer | No limit |
+| Layer size (zipped) | 50 MB (direct upload), 250 MB (S3) |
+
+## Using Layers in SAM/CDK
+
+<Tabs items={['SAM', 'CDK']}>
+<Tab value="SAM">
+```yaml title="template.yaml"
+Resources:
+  DependenciesLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: my-dependencies
+      ContentUri: layers/dependencies/
+      CompatibleRuntimes:
+        - nodejs20.x
+      RetentionPolicy: Retain
+    Metadata:
+      BuildMethod: nodejs20.x
+
+  MyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Layers:
+        - !Ref DependenciesLayer
+```
+</Tab>
+<Tab value="CDK">
+```typescript title="lib/stack.ts"
+import { Stack, StackProps } from 'aws-cdk-lib';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import { Construct } from 'constructs';
+
+export class MyStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
+    super(scope, id, props);
+
+    const layer = new lambda.LayerVersion(this, 'DependenciesLayer', {
+      code: lambda.Code.fromAsset('layers/dependencies'),
+      compatibleRuntimes: [lambda.Runtime.NODEJS_20_X],
+      description: 'Common dependencies',
+    });
+
+    const fn = new lambda.Function(this, 'MyFunction', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset('src'),
+      layers: [layer],
+    });
+  }
+}
+```
+</Tab>
+</Tabs>
+
+## Updating Layers Safely
+
+<Steps>
+<Step>
+### Publish New Version
+```bash title="Publish new layer version"
+aws lambda publish-layer-version \
+  --layer-name my-dependencies \
+  --zip-file fileb://my-layer-v2.zip \
+  --compatible-runtimes nodejs20.x
+```
+</Step>
+<Step>
+### Test with Alias
+```bash title="Update test alias"
+aws lambda update-function-configuration \
+  --function-name my-function:test \
+  --layers "arn:aws:lambda:us-east-1:123456789012:layer:my-dependencies:2"
+```
+</Step>
+<Step>
+### Validate
+Run tests against the function with the new layer version.
+</Step>
+<Step>
+### Roll Out
+```bash title="Update production"
+aws lambda update-function-configuration \
+  --function-name my-function:prod \
+  --layers "arn:aws:lambda:us-east-1:123456789012:layer:my-dependencies:2"
+```
+</Step>
+</Steps>
+
+## Best Practices
+
+<Callout type="info" title="Layer Best Practices">
+1. **Keep layers focused** - One purpose per layer (e.g., SDK, utilities, monitoring)
+2. **Version carefully** - Use semantic versioning for your layers
+3. **Document dependencies** - Include package.json or requirements.txt
+4. **Test thoroughly** - Test layer changes before deploying to production
+5. **Monitor size** - Stay under 250 MB total unzipped
+6. **Use compatible architectures** - Specify x86_64 and/or arm64
+7. **Avoid storing secrets** - Don't bake secrets into layers
+8. **Update regularly** - Keep dependencies current for security
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="Triggers" href="/docs/aws/lambda/triggers" description="Event sources" />
+  <Card title="Concurrency" href="/docs/aws/lambda/concurrency" description="Scaling configuration" />
+  <Card title="Monitoring" href="/docs/aws/lambda/monitoring" description="Observability" />
+  <Card title="Lambda CLI" href="/docs/aws/lambda/cli" description="CLI reference" />
+</Cards>

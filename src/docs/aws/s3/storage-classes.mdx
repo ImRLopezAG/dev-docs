@@ -1,0 +1,525 @@
+---
+title: S3 Storage Classes
+description: Comprehensive guide to S3 storage classes and cost optimization strategies
+---
+
+Amazon S3 offers a range of storage classes designed for different access patterns and cost requirements. Choosing the right storage class is critical for optimizing costs while meeting performance needs.
+
+## Storage Class Overview
+
+<Callout type="info" title="Key Principle">
+S3 storage classes trade off access speed and cost. Frequently accessed data should use Standard; rarely accessed data should use cheaper archive tiers.
+</Callout>
+
+## Frequently Accessed Data
+
+<Tabs items={['S3 Standard', 'S3 Intelligent-Tiering']}>
+<Tab value="S3 Standard">
+### S3 Standard
+
+The default storage class for frequently accessed data.
+
+| Attribute | Value |
+|-----------|-------|
+| **Durability** | 99.999999999% (11 9's) |
+| **Availability** | 99.99% |
+| **Availability Zones** | ≥3 |
+| **Minimum Storage Duration** | None |
+| **Minimum Object Size** | None |
+| **Retrieval Fee** | None |
+| **First Byte Latency** | Milliseconds |
+
+**Use Cases:**
+- Active application data
+- Dynamic website content
+- Mobile and gaming applications
+- Big data analytics
+- Content distribution
+
+```bash title="Upload to Standard (default)"
+aws s3 cp file.txt s3://my-bucket/
+```
+</Tab>
+<Tab value="S3 Intelligent-Tiering">
+### S3 Intelligent-Tiering
+
+Automatically moves objects between tiers based on access patterns.
+
+| Tier | Access Pattern | Storage Cost |
+|------|---------------|--------------|
+| **Frequent Access** | Accessed recently | Same as Standard |
+| **Infrequent Access** | Not accessed for 30 days | 40% lower |
+| **Archive Instant Access** | Not accessed for 90 days | 68% lower |
+| **Archive Access** | Not accessed for 90+ days (optional) | 71% lower |
+| **Deep Archive Access** | Not accessed for 180+ days (optional) | 95% lower |
+
+<Callout type="info">
+There's a small monthly monitoring and automation charge per object. Best for objects >128KB.
+</Callout>
+
+```bash title="Upload with Intelligent-Tiering"
+aws s3 cp file.txt s3://my-bucket/ \
+  --storage-class INTELLIGENT_TIERING
+```
+
+**Configure archive access tiers:**
+```bash title="Enable archive access tiers"
+aws s3api put-bucket-intelligent-tiering-configuration \
+  --bucket my-bucket \
+  --id my-config \
+  --intelligent-tiering-configuration '{
+    "Id": "my-config",
+    "Status": "Enabled",
+    "Tierings": [
+      {
+        "Days": 90,
+        "AccessTier": "ARCHIVE_ACCESS"
+      },
+      {
+        "Days": 180,
+        "AccessTier": "DEEP_ARCHIVE_ACCESS"
+      }
+    ]
+  }'
+```
+</Tab>
+</Tabs>
+
+## Infrequently Accessed Data
+
+<Tabs items={['Standard-IA', 'One Zone-IA']}>
+<Tab value="Standard-IA">
+### S3 Standard-Infrequent Access (Standard-IA)
+
+For data accessed less frequently but requiring rapid access when needed.
+
+| Attribute | Value |
+|-----------|-------|
+| **Durability** | 99.999999999% (11 9's) |
+| **Availability** | 99.9% |
+| **Availability Zones** | ≥3 |
+| **Minimum Storage Duration** | 30 days |
+| **Minimum Object Size** | 128KB (charged as 128KB if smaller) |
+| **Retrieval Fee** | Per GB retrieved |
+| **First Byte Latency** | Milliseconds |
+
+**Cost Comparison (vs Standard):**
+- Storage: ~40% cheaper
+- Retrieval: Additional fee per GB
+
+**Use Cases:**
+- Backups and disaster recovery
+- Long-term storage that needs quick access
+- Older data that's occasionally accessed
+
+```bash title="Upload to Standard-IA"
+aws s3 cp file.txt s3://my-bucket/ \
+  --storage-class STANDARD_IA
+```
+</Tab>
+<Tab value="One Zone-IA">
+### S3 One Zone-Infrequent Access (One Zone-IA)
+
+Same as Standard-IA but stored in a single Availability Zone.
+
+| Attribute | Value |
+|-----------|-------|
+| **Durability** | 99.999999999% (11 9's) within AZ |
+| **Availability** | 99.5% |
+| **Availability Zones** | 1 |
+| **Minimum Storage Duration** | 30 days |
+| **Minimum Object Size** | 128KB |
+| **Retrieval Fee** | Per GB retrieved |
+| **First Byte Latency** | Milliseconds |
+
+<Callout type="warn">
+Data is lost if the Availability Zone is destroyed. Not recommended for sole copies of critical data.
+</Callout>
+
+**Cost Comparison (vs Standard-IA):**
+- Storage: ~20% cheaper than Standard-IA
+
+**Use Cases:**
+- Secondary backups
+- Easily reproducible data
+- Thumbnails or transcoded media
+
+```bash title="Upload to One Zone-IA"
+aws s3 cp file.txt s3://my-bucket/ \
+  --storage-class ONEZONE_IA
+```
+</Tab>
+</Tabs>
+
+## Archive Storage Classes
+
+<Tabs items={['Glacier Instant', 'Glacier Flexible', 'Glacier Deep Archive']}>
+<Tab value="Glacier Instant">
+### S3 Glacier Instant Retrieval
+
+Archive storage with millisecond retrieval.
+
+| Attribute | Value |
+|-----------|-------|
+| **Durability** | 99.999999999% (11 9's) |
+| **Availability** | 99.9% |
+| **Availability Zones** | ≥3 |
+| **Minimum Storage Duration** | 90 days |
+| **Minimum Object Size** | 128KB |
+| **Retrieval Fee** | Per GB |
+| **First Byte Latency** | Milliseconds |
+
+**Cost Comparison (vs Standard):**
+- Storage: ~68% cheaper
+- Retrieval: Higher fee than Standard-IA
+
+**Use Cases:**
+- Medical images
+- News media archives
+- User-generated content archives
+- Accessed once per quarter or less
+
+```bash title="Upload to Glacier Instant Retrieval"
+aws s3 cp file.txt s3://my-bucket/ \
+  --storage-class GLACIER_IR
+```
+</Tab>
+<Tab value="Glacier Flexible">
+### S3 Glacier Flexible Retrieval (formerly Glacier)
+
+Low-cost archive storage with flexible retrieval times.
+
+| Attribute | Value |
+|-----------|-------|
+| **Durability** | 99.999999999% (11 9's) |
+| **Availability** | 99.99% (after restore) |
+| **Availability Zones** | ≥3 |
+| **Minimum Storage Duration** | 90 days |
+| **Minimum Object Size** | 40KB overhead |
+| **First Byte Latency** | Minutes to hours |
+
+**Retrieval Options:**
+
+| Tier | Time | Use Case |
+|------|------|----------|
+| **Expedited** | 1-5 minutes | Urgent access (costs most) |
+| **Standard** | 3-5 hours | Regular retrieval |
+| **Bulk** | 5-12 hours | Large data sets (cheapest) |
+
+```bash title="Upload to Glacier Flexible"
+aws s3 cp file.txt s3://my-bucket/ \
+  --storage-class GLACIER
+```
+
+**Restore an object:**
+```bash title="Restore from Glacier"
+# Standard retrieval, available for 7 days
+aws s3api restore-object \
+  --bucket my-bucket \
+  --key my-archive.zip \
+  --restore-request '{
+    "Days": 7,
+    "GlacierJobParameters": {
+      "Tier": "Standard"
+    }
+  }'
+```
+</Tab>
+<Tab value="Glacier Deep Archive">
+### S3 Glacier Deep Archive
+
+Lowest cost storage for long-term retention.
+
+| Attribute | Value |
+|-----------|-------|
+| **Durability** | 99.999999999% (11 9's) |
+| **Availability** | 99.99% (after restore) |
+| **Availability Zones** | ≥3 |
+| **Minimum Storage Duration** | 180 days |
+| **Minimum Object Size** | 40KB overhead |
+| **First Byte Latency** | 12-48 hours |
+
+**Retrieval Options:**
+
+| Tier | Time | Use Case |
+|------|------|----------|
+| **Standard** | Within 12 hours | Regular retrieval |
+| **Bulk** | Within 48 hours | Large data sets (cheapest) |
+
+**Cost Comparison:**
+- ~95% cheaper than S3 Standard
+- Cheapest AWS storage option
+
+**Use Cases:**
+- Compliance archives (7+ years retention)
+- Digital preservation
+- Magnetic tape replacement
+- Healthcare and financial records
+
+```bash title="Upload to Glacier Deep Archive"
+aws s3 cp file.txt s3://my-bucket/ \
+  --storage-class DEEP_ARCHIVE
+```
+
+```bash title="Restore from Deep Archive"
+aws s3api restore-object \
+  --bucket my-bucket \
+  --key compliance-record.pdf \
+  --restore-request '{
+    "Days": 30,
+    "GlacierJobParameters": {
+      "Tier": "Bulk"
+    }
+  }'
+```
+</Tab>
+</Tabs>
+
+## S3 Express One Zone
+
+<Callout type="info" title="Newest Storage Class">
+S3 Express One Zone is designed for performance-critical applications requiring single-digit millisecond latency.
+</Callout>
+
+| Attribute | Value |
+|-----------|-------|
+| **Latency** | Single-digit milliseconds |
+| **Requests/sec** | Hundreds of thousands |
+| **Availability Zones** | 1 (choose your AZ) |
+| **Storage Type** | Directory buckets |
+
+**Use Cases:**
+- Machine learning training
+- Financial modeling
+- Real-time analytics
+- High-performance computing
+
+```bash title="Create Express One Zone directory bucket"
+aws s3api create-bucket \
+  --bucket my-bucket--usw2-az1--x-s3 \
+  --region us-west-2 \
+  --create-bucket-configuration '{
+    "Location": {
+      "Type": "AvailabilityZone",
+      "Name": "usw2-az1"
+    },
+    "Bucket": {
+      "DataRedundancy": "SingleAvailabilityZone",
+      "Type": "Directory"
+    }
+  }'
+```
+
+## Reduced Redundancy (Deprecated)
+
+<Callout type="error" title="Not Recommended">
+S3 Reduced Redundancy Storage (RRS) is deprecated. Use S3 One Zone-IA or S3 Standard instead.
+</Callout>
+
+## Storage Class Comparison Table
+
+| Class | Durability | Availability | AZs | Min Duration | Min Size | Latency |
+|-------|------------|--------------|-----|--------------|----------|---------|
+| Standard | 11 9's | 99.99% | ≥3 | None | None | ms |
+| Intelligent-Tiering | 11 9's | 99.9% | ≥3 | None | None | ms |
+| Standard-IA | 11 9's | 99.9% | ≥3 | 30 days | 128KB | ms |
+| One Zone-IA | 11 9's | 99.5% | 1 | 30 days | 128KB | ms |
+| Glacier Instant | 11 9's | 99.9% | ≥3 | 90 days | 128KB | ms |
+| Glacier Flexible | 11 9's | 99.99%* | ≥3 | 90 days | 40KB+ | min-hrs |
+| Glacier Deep Archive | 11 9's | 99.99%* | ≥3 | 180 days | 40KB+ | hrs |
+| Express One Zone | 11 9's | 99.95% | 1 | 1 hour | None | < 10ms |
+
+*After restore
+
+## Changing Storage Classes
+
+<Tabs items={['Single Object', 'Batch Operations', 'Lifecycle Rules']}>
+<Tab value="Single Object">
+```bash title="Copy object to new storage class"
+aws s3 cp s3://my-bucket/file.txt s3://my-bucket/file.txt \
+  --storage-class GLACIER_IR
+```
+
+```bash title="Using S3 API"
+aws s3api copy-object \
+  --bucket my-bucket \
+  --key file.txt \
+  --copy-source my-bucket/file.txt \
+  --storage-class STANDARD_IA \
+  --metadata-directive COPY
+```
+</Tab>
+<Tab value="Batch Operations">
+Use S3 Batch Operations for large-scale storage class changes:
+
+```json title="batch-job-manifest.json"
+{
+  "Spec": {
+    "Format": "S3BatchOperations_CSV_20180820",
+    "Fields": ["Bucket", "Key"]
+  },
+  "Location": {
+    "ObjectArn": "arn:aws:s3:::my-bucket/manifest.csv",
+    "ETag": "abc123"
+  }
+}
+```
+
+```bash title="Create batch job"
+aws s3control create-job \
+  --account-id 123456789012 \
+  --manifest file://manifest.json \
+  --operation '{
+    "S3PutObjectCopy": {
+      "TargetResource": "arn:aws:s3:::my-bucket",
+      "StorageClass": "GLACIER"
+    }
+  }' \
+  --report '{
+    "Bucket": "arn:aws:s3:::report-bucket",
+    "Enabled": true,
+    "Format": "Report_CSV_20180820",
+    "ReportScope": "AllTasks"
+  }' \
+  --role-arn arn:aws:iam::123456789012:role/S3BatchRole \
+  --priority 1
+```
+</Tab>
+<Tab value="Lifecycle Rules">
+Automate storage class transitions:
+
+```json title="lifecycle-config.json"
+{
+  "Rules": [
+    {
+      "ID": "OptimizeStorage",
+      "Status": "Enabled",
+      "Filter": {},
+      "Transitions": [
+        {
+          "Days": 30,
+          "StorageClass": "STANDARD_IA"
+        },
+        {
+          "Days": 90,
+          "StorageClass": "GLACIER_IR"
+        },
+        {
+          "Days": 365,
+          "StorageClass": "DEEP_ARCHIVE"
+        }
+      ]
+    }
+  ]
+}
+```
+
+```bash title="Apply lifecycle configuration"
+aws s3api put-bucket-lifecycle-configuration \
+  --bucket my-bucket \
+  --lifecycle-configuration file://lifecycle-config.json
+```
+</Tab>
+</Tabs>
+
+## Cost Optimization Strategies
+
+<Steps>
+<Step>
+### Analyze Access Patterns
+Use S3 Storage Lens and access logs to understand how data is accessed:
+
+```bash title="Create Storage Lens configuration"
+aws s3control put-storage-lens-configuration \
+  --account-id 123456789012 \
+  --config-id my-dashboard \
+  --storage-lens-configuration '{
+    "Id": "my-dashboard",
+    "IsEnabled": true,
+    "AccountLevel": {
+      "BucketLevel": {
+        "ActivityMetrics": {
+          "IsEnabled": true
+        }
+      }
+    }
+  }'
+```
+</Step>
+<Step>
+### Use Intelligent-Tiering for Unknown Patterns
+When you can't predict access patterns:
+
+```bash title="Set default storage class"
+# In lifecycle rule
+{
+  "Rules": [{
+    "ID": "DefaultToIntelligentTiering",
+    "Filter": {"Prefix": ""},
+    "Status": "Enabled",
+    "Transitions": [{
+      "Days": 0,
+      "StorageClass": "INTELLIGENT_TIERING"
+    }]
+  }]
+}
+```
+</Step>
+<Step>
+### Set Lifecycle Rules Based on Data Age
+Create rules matching your retention requirements:
+
+```json title="Tiered lifecycle example"
+{
+  "Rules": [
+    {
+      "ID": "LogsLifecycle",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "logs/"},
+      "Transitions": [
+        {"Days": 30, "StorageClass": "STANDARD_IA"},
+        {"Days": 90, "StorageClass": "GLACIER"}
+      ],
+      "Expiration": {"Days": 365}
+    }
+  ]
+}
+```
+</Step>
+<Step>
+### Monitor and Adjust
+Regularly review storage costs and adjust policies:
+
+```bash title="Get bucket storage metrics"
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/S3 \
+  --metric-name BucketSizeBytes \
+  --dimensions Name=BucketName,Value=my-bucket Name=StorageType,Value=StandardStorage \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-31T23:59:59Z \
+  --period 86400 \
+  --statistics Average
+```
+</Step>
+</Steps>
+
+## Best Practices
+
+<Callout type="info" title="Storage Class Selection Guidelines">
+1. **Standard**: Default for active data with unpredictable access
+2. **Intelligent-Tiering**: Best for large objects with unknown access patterns
+3. **Standard-IA**: Data accessed monthly, needs quick access
+4. **One Zone-IA**: Reproducible data, secondary copies
+5. **Glacier Instant**: Quarterly access, millisecond retrieval needed
+6. **Glacier Flexible**: Annual access, can wait hours
+7. **Deep Archive**: Rarely accessed, compliance/legal requirements
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="Buckets" href="/docs/aws/s3/buckets" description="Bucket management" />
+  <Card title="Lifecycle Rules" href="/docs/aws/s3/lifecycle" description="Automate transitions" />
+  <Card title="Security" href="/docs/aws/s3/security" description="Access control and encryption" />
+  <Card title="S3 CLI Reference" href="/docs/aws/s3/cli" description="Complete CLI commands" />
+</Cards>

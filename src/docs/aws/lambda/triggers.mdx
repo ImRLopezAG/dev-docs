@@ -1,0 +1,521 @@
+---
+title: Lambda Triggers & Event Sources
+description: Complete guide to Lambda triggers, event source mappings, and invocation patterns
+---
+
+Lambda functions are invoked by triggers—events from various AWS services and external sources. Understanding triggers is essential for building event-driven architectures.
+
+## Invocation Models
+
+<Callout type="info" title="Three Invocation Types">
+- **Synchronous**: Caller waits for response (API Gateway, SDK)
+- **Asynchronous**: Fire-and-forget (S3, SNS, EventBridge)
+- **Event Source Mapping**: Lambda polls source (SQS, Kinesis, DynamoDB Streams)
+</Callout>
+
+| Model | Response | Retries | Examples |
+|-------|----------|---------|----------|
+| Synchronous | Returns result | Caller handles | API Gateway, SDK invoke |
+| Asynchronous | Returns acknowledgment | 2 automatic retries | S3, SNS, EventBridge |
+| Polling | N/A | Based on source | SQS, Kinesis, DynamoDB |
+
+## API Gateway Trigger
+
+The most common trigger for HTTP APIs:
+
+<Tabs items={['REST API', 'HTTP API', 'WebSocket']}>
+<Tab value="REST API">
+```bash title="Create REST API trigger"
+# Create API
+aws apigateway create-rest-api \
+  --name "MyAPI" \
+  --endpoint-configuration types=REGIONAL
+
+# Add Lambda permission
+aws lambda add-permission \
+  --function-name my-function \
+  --statement-id apigateway-invoke \
+  --action lambda:InvokeFunction \
+  --principal apigateway.amazonaws.com \
+  --source-arn "arn:aws:execute-api:us-east-1:123456789012:api-id/*/*/*"
+```
+
+```javascript title="Handler for REST API"
+export const handler = async (event) => {
+  const { httpMethod, path, body, queryStringParameters } = event;
+  
+  return {
+    statusCode: 200,
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      method: httpMethod,
+      path: path,
+      query: queryStringParameters
+    })
+  };
+};
+```
+</Tab>
+<Tab value="HTTP API">
+```bash title="Create HTTP API trigger"
+aws apigatewayv2 create-api \
+  --name "MyHTTPAPI" \
+  --protocol-type HTTP \
+  --target "arn:aws:lambda:us-east-1:123456789012:function:my-function"
+```
+
+```javascript title="Handler for HTTP API"
+export const handler = async (event) => {
+  // HTTP API uses version 2.0 payload format
+  const { requestContext, body, queryStringParameters } = event;
+  
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      method: requestContext.http.method,
+      path: requestContext.http.path
+    })
+  };
+};
+```
+
+<Callout type="info">
+HTTP API is simpler, cheaper, and faster than REST API. Use it unless you need REST API features like caching or request validation.
+</Callout>
+</Tab>
+<Tab value="WebSocket">
+```javascript title="WebSocket Handler"
+export const handler = async (event) => {
+  const { requestContext, body } = event;
+  const { connectionId, routeKey } = requestContext;
+  
+  switch (routeKey) {
+    case '$connect':
+      // Handle new connection
+      return { statusCode: 200 };
+    case '$disconnect':
+      // Handle disconnection
+      return { statusCode: 200 };
+    case 'message':
+      // Handle custom route
+      return { statusCode: 200 };
+    default:
+      return { statusCode: 400 };
+  }
+};
+```
+</Tab>
+</Tabs>
+
+## S3 Trigger
+
+Invoke Lambda when objects are created, modified, or deleted:
+
+```bash title="Add S3 trigger"
+# First, add permission
+aws lambda add-permission \
+  --function-name my-function \
+  --statement-id s3-trigger \
+  --action lambda:InvokeFunction \
+  --principal s3.amazonaws.com \
+  --source-arn arn:aws:s3:::my-bucket \
+  --source-account 123456789012
+
+# Then, configure bucket notification
+aws s3api put-bucket-notification-configuration \
+  --bucket my-bucket \
+  --notification-configuration '{
+    "LambdaFunctionConfigurations": [
+      {
+        "Id": "ProcessUploads",
+        "LambdaFunctionArn": "arn:aws:lambda:us-east-1:123456789012:function:my-function",
+        "Events": ["s3:ObjectCreated:*"],
+        "Filter": {
+          "Key": {
+            "FilterRules": [
+              {"Name": "prefix", "Value": "uploads/"},
+              {"Name": "suffix", "Value": ".jpg"}
+            ]
+          }
+        }
+      }
+    ]
+  }'
+```
+
+```javascript title="S3 Event Handler"
+export const handler = async (event) => {
+  for (const record of event.Records) {
+    const bucket = record.s3.bucket.name;
+    const key = decodeURIComponent(record.s3.object.key.replace(/\+/g, ' '));
+    const eventName = record.eventName;
+    
+    console.log(`Event: ${eventName} - Bucket: ${bucket} - Key: ${key}`);
+    
+    // Process the object
+    // const s3 = new S3Client({});
+    // const object = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  }
+  
+  return { statusCode: 200 };
+};
+```
+
+<Callout type="warn">
+S3 triggers are asynchronous. If processing fails after retries, configure a DLQ to capture failed events.
+</Callout>
+
+## SQS Trigger
+
+Lambda polls SQS queues for messages:
+
+```bash title="Create SQS event source mapping"
+aws lambda create-event-source-mapping \
+  --function-name my-function \
+  --event-source-arn arn:aws:sqs:us-east-1:123456789012:my-queue \
+  --batch-size 10 \
+  --maximum-batching-window-in-seconds 5
+```
+
+```javascript title="SQS Event Handler"
+export const handler = async (event) => {
+  const batchItemFailures = [];
+  
+  for (const record of event.Records) {
+    try {
+      const body = JSON.parse(record.body);
+      console.log('Processing:', body);
+      
+      // Process message
+      await processMessage(body);
+      
+    } catch (error) {
+      console.error(`Failed to process ${record.messageId}:`, error);
+      batchItemFailures.push({ itemIdentifier: record.messageId });
+    }
+  }
+  
+  // Return partial batch failure response
+  return { batchItemFailures };
+};
+```
+
+<Tabs items={['Standard Queue', 'FIFO Queue']}>
+<Tab value="Standard Queue">
+```bash title="Standard queue configuration"
+aws lambda create-event-source-mapping \
+  --function-name my-function \
+  --event-source-arn arn:aws:sqs:us-east-1:123456789012:my-queue \
+  --batch-size 10 \
+  --scaling-config MaximumConcurrency=5
+```
+
+| Setting | Description |
+|---------|-------------|
+| **BatchSize** | 1-10,000 messages per batch |
+| **MaximumBatchingWindow** | 0-300 seconds to collect messages |
+| **MaximumConcurrency** | Limit concurrent executions |
+</Tab>
+<Tab value="FIFO Queue">
+```bash title="FIFO queue configuration"
+aws lambda create-event-source-mapping \
+  --function-name my-function \
+  --event-source-arn arn:aws:sqs:us-east-1:123456789012:my-queue.fifo \
+  --batch-size 10
+```
+
+<Callout type="info">
+FIFO queues maintain message ordering. Lambda processes one batch per message group at a time.
+</Callout>
+</Tab>
+</Tabs>
+
+## DynamoDB Streams Trigger
+
+React to changes in DynamoDB tables:
+
+```bash title="Create DynamoDB streams trigger"
+aws lambda create-event-source-mapping \
+  --function-name my-function \
+  --event-source-arn arn:aws:dynamodb:us-east-1:123456789012:table/MyTable/stream/2024-01-01T00:00:00.000 \
+  --batch-size 100 \
+  --starting-position LATEST \
+  --filter-criteria '{"Filters": [{"Pattern": "{\"eventName\": [\"INSERT\", \"MODIFY\"]}"}]}'
+```
+
+```javascript title="DynamoDB Streams Handler"
+export const handler = async (event) => {
+  for (const record of event.Records) {
+    const { eventName, dynamodb } = record;
+    
+    console.log(`Event: ${eventName}`);
+    
+    switch (eventName) {
+      case 'INSERT':
+        const newItem = dynamodb.NewImage;
+        console.log('New item:', JSON.stringify(newItem));
+        break;
+      case 'MODIFY':
+        const oldItem = dynamodb.OldImage;
+        const modifiedItem = dynamodb.NewImage;
+        console.log('Modified:', JSON.stringify({ old: oldItem, new: modifiedItem }));
+        break;
+      case 'REMOVE':
+        const deletedItem = dynamodb.OldImage;
+        console.log('Deleted:', JSON.stringify(deletedItem));
+        break;
+    }
+  }
+};
+```
+
+## Kinesis Trigger
+
+Process streaming data:
+
+```bash title="Create Kinesis trigger"
+aws lambda create-event-source-mapping \
+  --function-name my-function \
+  --event-source-arn arn:aws:kinesis:us-east-1:123456789012:stream/my-stream \
+  --batch-size 100 \
+  --starting-position LATEST \
+  --parallelization-factor 2 \
+  --tumbling-window-in-seconds 60
+```
+
+```javascript title="Kinesis Event Handler"
+export const handler = async (event) => {
+  for (const record of event.Records) {
+    // Kinesis data is base64 encoded
+    const payload = Buffer.from(record.kinesis.data, 'base64').toString('utf-8');
+    const data = JSON.parse(payload);
+    
+    console.log('Sequence:', record.kinesis.sequenceNumber);
+    console.log('Data:', data);
+  }
+  
+  // For tumbling windows, state is available
+  if (event.state) {
+    console.log('Window state:', event.state);
+  }
+  
+  return { state: { count: event.Records.length } };
+};
+```
+
+## EventBridge Trigger
+
+Schedule functions or react to events:
+
+<Tabs items={['Schedule', 'Event Pattern']}>
+<Tab value="Schedule">
+```bash title="Create scheduled trigger"
+# Create rule
+aws events put-rule \
+  --name "HourlyTrigger" \
+  --schedule-expression "rate(1 hour)" \
+  --state ENABLED
+
+# Add Lambda target
+aws events put-targets \
+  --rule HourlyTrigger \
+  --targets '[{
+    "Id": "1",
+    "Arn": "arn:aws:lambda:us-east-1:123456789012:function:my-function"
+  }]'
+
+# Add permission
+aws lambda add-permission \
+  --function-name my-function \
+  --statement-id eventbridge-hourly \
+  --action lambda:InvokeFunction \
+  --principal events.amazonaws.com \
+  --source-arn arn:aws:events:us-east-1:123456789012:rule/HourlyTrigger
+```
+
+**Schedule expressions:**
+- `rate(1 minute)` - Every minute
+- `rate(5 hours)` - Every 5 hours
+- `cron(0 12 * * ? *)` - Daily at noon UTC
+- `cron(0 8 ? * MON-FRI *)` - Weekdays at 8 AM UTC
+</Tab>
+<Tab value="Event Pattern">
+```bash title="Create event pattern trigger"
+aws events put-rule \
+  --name "EC2StateChange" \
+  --event-pattern '{
+    "source": ["aws.ec2"],
+    "detail-type": ["EC2 Instance State-change Notification"],
+    "detail": {
+      "state": ["stopped", "terminated"]
+    }
+  }'
+```
+
+```javascript title="EventBridge Handler"
+export const handler = async (event) => {
+  console.log('Event source:', event.source);
+  console.log('Detail type:', event['detail-type']);
+  console.log('Detail:', JSON.stringify(event.detail));
+  
+  // React to the event
+  return { processed: true };
+};
+```
+</Tab>
+</Tabs>
+
+## SNS Trigger
+
+Subscribe Lambda to SNS topics:
+
+```bash title="Create SNS subscription"
+aws sns subscribe \
+  --topic-arn arn:aws:sns:us-east-1:123456789012:my-topic \
+  --protocol lambda \
+  --notification-endpoint arn:aws:lambda:us-east-1:123456789012:function:my-function
+```
+
+```javascript title="SNS Event Handler"
+export const handler = async (event) => {
+  for (const record of event.Records) {
+    const message = record.Sns.Message;
+    const subject = record.Sns.Subject;
+    const timestamp = record.Sns.Timestamp;
+    
+    console.log(`[${timestamp}] ${subject}: ${message}`);
+    
+    // Parse if JSON
+    try {
+      const data = JSON.parse(message);
+      await processData(data);
+    } catch {
+      await processText(message);
+    }
+  }
+};
+```
+
+## Cognito Trigger
+
+User pool lifecycle events:
+
+```javascript title="Cognito Triggers"
+// Pre-signup validation
+export const preSignUp = async (event) => {
+  if (event.request.userAttributes.email.endsWith('@blocked.com')) {
+    throw new Error('Email domain not allowed');
+  }
+  return event;
+};
+
+// Post-confirmation
+export const postConfirmation = async (event) => {
+  const { userName, userAttributes } = event.request;
+  // Create user record in database
+  await createUserRecord(userName, userAttributes);
+  return event;
+};
+
+// Custom authentication
+export const defineAuthChallenge = async (event) => {
+  if (event.request.session.length === 0) {
+    event.response.challengeName = 'CUSTOM_CHALLENGE';
+    event.response.issueTokens = false;
+    event.response.failAuthentication = false;
+  }
+  return event;
+};
+```
+
+## CloudWatch Logs Trigger
+
+Process log data in real-time:
+
+```bash title="Create CloudWatch Logs trigger"
+aws logs put-subscription-filter \
+  --log-group-name /aws/lambda/source-function \
+  --filter-name ErrorFilter \
+  --filter-pattern "ERROR" \
+  --destination-arn arn:aws:lambda:us-east-1:123456789012:function:log-processor
+```
+
+```javascript title="CloudWatch Logs Handler"
+import { gunzipSync } from 'zlib';
+
+export const handler = async (event) => {
+  // CloudWatch Logs data is base64 encoded and gzipped
+  const payload = Buffer.from(event.awslogs.data, 'base64');
+  const unzipped = gunzipSync(payload);
+  const data = JSON.parse(unzipped.toString());
+  
+  console.log('Log group:', data.logGroup);
+  console.log('Log stream:', data.logStream);
+  
+  for (const logEvent of data.logEvents) {
+    console.log('Message:', logEvent.message);
+  }
+};
+```
+
+## Event Source Mapping Settings
+
+<Callout type="info" title="Event Source Mapping Options">
+Event source mappings (for polling sources) have additional configuration options for controlling how Lambda processes events.
+</Callout>
+
+| Option | Description | Sources |
+|--------|-------------|---------|
+| **BatchSize** | Records per batch | All polling sources |
+| **MaximumBatchingWindow** | Time to collect records | All polling sources |
+| **ParallelizationFactor** | Concurrent batches per shard | Kinesis, DynamoDB |
+| **BisectBatchOnError** | Split batch on error | Kinesis, DynamoDB |
+| **MaximumRetryAttempts** | Retry count | Kinesis, DynamoDB |
+| **MaximumRecordAge** | Max age of records | Kinesis, DynamoDB |
+| **TumblingWindow** | Aggregate across invocations | Kinesis, DynamoDB |
+| **FilterCriteria** | Filter events before processing | All polling sources |
+
+## Event Filtering
+
+Reduce invocations by filtering events:
+
+```bash title="Add filter criteria"
+aws lambda update-event-source-mapping \
+  --uuid "abc123-def456" \
+  --filter-criteria '{
+    "Filters": [
+      {
+        "Pattern": "{\"body\": {\"type\": [\"order\", \"payment\"]}}"
+      }
+    ]
+  }'
+```
+
+**Filter patterns:**
+- `{"field": ["value1", "value2"]}` - Match any value
+- `{"field": [{"prefix": "prod-"}]}` - Prefix match
+- `{"field": [{"numeric": [">", 100]}]}` - Numeric comparison
+- `{"field": [{"exists": true}]}` - Field exists
+
+## Best Practices
+
+<Callout type="info" title="Trigger Best Practices">
+1. **Use event filtering** - Reduce unnecessary invocations
+2. **Enable partial batch failure** - For SQS, Kinesis, DynamoDB
+3. **Configure DLQ** - Capture failed async invocations
+4. **Set appropriate batch sizes** - Balance throughput and latency
+5. **Implement idempotency** - Handle duplicate events gracefully
+6. **Use reserved concurrency** - Protect downstream resources
+7. **Monitor with alarms** - Track errors and throttles
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="Layers" href="/docs/aws/lambda/layers" description="Share code across functions" />
+  <Card title="Concurrency" href="/docs/aws/lambda/concurrency" description="Scaling and performance" />
+  <Card title="Monitoring" href="/docs/aws/lambda/monitoring" description="Logs, metrics, tracing" />
+  <Card title="Lambda CLI" href="/docs/aws/lambda/cli" description="Complete CLI reference" />
+</Cards>

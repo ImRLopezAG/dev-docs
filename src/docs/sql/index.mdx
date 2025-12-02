@@ -1,0 +1,168 @@
+---
+title: SQL for Developers
+description: Complete guide to SQL including query optimization, indexing strategies, and database fundamentals for PostgreSQL, MySQL, and MS SQL Server
+icon: Database
+---
+
+Welcome to the **SQL for Developers** documentation! This comprehensive guide covers everything from SQL fundamentals to advanced optimization techniques across major database platforms.
+
+## What You'll Learn
+
+This documentation covers:
+
+- **SQL Fundamentals**: SELECT, INSERT, UPDATE, DELETE, JOINs, and subqueries
+- **Query Optimization**: EXPLAIN plans, performance tuning, and best practices
+- **Indexing Strategies**: B-tree, hash, GIN, GiST, and composite indexes
+- **Database-Specific Guides**: PostgreSQL, MySQL, and MS SQL Server
+- **Database Design**: Normalization, relationships, and schema design
+- **Transactions & ACID**: Isolation levels, locking, and concurrency control
+
+## Prerequisites
+
+Before diving in, you should have:
+
+1. A database server installed (PostgreSQL, MySQL, or SQL Server)
+2. Basic command line familiarity
+3. Understanding of data types and programming concepts
+
+## Quick Navigation
+
+<Cards>
+  <Card title="SQL Fundamentals" href="/docs/sql/fundamentals" description="Core SQL syntax and operations" />
+  <Card title="Query Optimization" href="/docs/sql/query-optimization" description="Performance tuning techniques" />
+  <Card title="Indexing Strategies" href="/docs/sql/indexing" description="Index types and best practices" />
+  <Card title="Transactions & ACID" href="/docs/sql/transactions" description="Transactions, isolation levels, locking" />
+  <Card title="Database Design" href="/docs/sql/database-design" description="Normalization and schema patterns" />
+  <Card title="PostgreSQL" href="/docs/sql/postgresql" description="PostgreSQL-specific features" />
+  <Card title="MySQL" href="/docs/sql/mysql" description="MySQL-specific features" />
+  <Card title="MS SQL Server" href="/docs/sql/mssql" description="SQL Server-specific features" />
+</Cards>
+
+## Topic Overview
+
+### SQL Fundamentals
+Master the core building blocks of SQL:
+- **Data Retrieval**: SELECT statements with filtering and sorting
+- **Data Manipulation**: INSERT, UPDATE, DELETE operations
+- **Joins**: INNER, LEFT, RIGHT, FULL OUTER, and CROSS joins
+- **Aggregations**: GROUP BY, HAVING, and aggregate functions
+- **Subqueries**: Correlated and non-correlated subqueries
+- **CTEs**: Common Table Expressions for readable queries
+
+### Query Optimization
+Learn to write performant queries:
+- **Execution Plans**: Reading and understanding EXPLAIN output
+- **Index Usage**: Ensuring queries use indexes effectively
+- **Query Rewriting**: Transforming slow queries into fast ones
+- **Statistics**: How the query planner makes decisions
+- **Common Anti-patterns**: Avoiding N+1 queries, SELECT *, etc.
+
+### Indexing Strategies
+Understand when and how to create indexes:
+- **B-tree Indexes**: Default index type for most queries
+- **Hash Indexes**: Equality comparisons
+- **GIN Indexes**: Full-text search and arrays (PostgreSQL)
+- **GiST Indexes**: Geometric and spatial data
+- **Composite Indexes**: Multi-column indexes and column order
+- **Partial Indexes**: Indexing subsets of data
+
+### Database Platforms
+
+<Cards>
+  <Card title="PostgreSQL" href="/docs/sql/postgresql" description="Advanced features, extensions, and psql CLI" />
+  <Card title="MySQL" href="/docs/sql/mysql" description="Storage engines, replication, and mysql CLI" />
+  <Card title="MS SQL Server" href="/docs/sql/mssql" description="T-SQL, SSMS, and sqlcmd" />
+</Cards>
+
+## Quick Start
+
+<Callout type="info">
+  Choose your database platform below to get started with the CLI setup.
+</Callout>
+
+### PostgreSQL
+```bash
+# Connect to PostgreSQL
+psql -U postgres -d mydatabase
+
+# List all databases
+\l
+
+# Connect to a specific database
+\c mydatabase
+
+# List all tables
+\dt
+```
+
+### MySQL
+```bash
+# Connect to MySQL
+mysql -u root -p
+
+# List all databases
+SHOW DATABASES;
+
+# Use a specific database
+USE mydatabase;
+
+# List all tables
+SHOW TABLES;
+```
+
+### MS SQL Server
+```bash
+# Connect using sqlcmd
+sqlcmd -S localhost -U sa -P 'YourPassword'
+
+# List all databases
+SELECT name FROM sys.databases;
+
+# Use a specific database
+USE mydatabase;
+
+# List all tables
+SELECT * FROM INFORMATION_SCHEMA.TABLES;
+```
+
+## Performance Comparison
+
+| Feature | PostgreSQL | MySQL | SQL Server |
+|---------|------------|-------|------------|
+| Default Index | B-tree | B-tree | B-tree |
+| Full-Text Search | Built-in (GIN) | Built-in (FULLTEXT) | Built-in |
+| JSON Support | Native (JSONB) | Native (JSON) | Native (JSON) |
+| CTEs | ✅ Full Support | ✅ Full Support | ✅ Full Support |
+| Window Functions | ✅ Full Support | ✅ Full Support | ✅ Full Support |
+| Partitioning | Declarative | Range/List/Hash | Range/List/Hash |
+| Max DB Size | Unlimited | 256 TB | 524 PB |
+
+## Best Practices
+
+<Callout type="warn">
+  Always test queries with realistic data volumes before deploying to production.
+</Callout>
+
+1. **Use EXPLAIN**: Always analyze query execution plans
+2. **Index Wisely**: Don't over-index; each index has write overhead
+3. **Avoid SELECT ***: Only select columns you need
+4. **Use Parameterized Queries**: Prevent SQL injection
+5. **Monitor Slow Queries**: Enable slow query logging
+6. **Regular Maintenance**: VACUUM (PostgreSQL), OPTIMIZE (MySQL)
+
+## Next Steps
+
+<Steps>
+  <Step>
+    ### Learn SQL Fundamentals
+    Start with the [SQL Fundamentals](/docs/sql/fundamentals) guide to master core syntax.
+  </Step>
+  <Step>
+    ### Choose Your Database
+    Pick [PostgreSQL](/docs/sql/postgresql), [MySQL](/docs/sql/mysql), or [MS SQL Server](/docs/sql/mssql).
+  </Step>
+  <Step>
+    ### Optimize Your Queries
+    Learn [Query Optimization](/docs/sql/query-optimization) and [Indexing Strategies](/docs/sql/indexing).
+  </Step>
+</Steps>

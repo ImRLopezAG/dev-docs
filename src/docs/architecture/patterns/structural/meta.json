@@ -1,0 +1,15 @@
+{
+	"title": "Structural Patterns",
+	"description": "Patterns that deal with object composition",
+	"icon": "Box",
+	"pages": [
+		"index",
+		"adapter",
+		"bridge",
+		"composite",
+		"decorator",
+		"facade",
+		"flyweight",
+		"proxy"
+	]
+}

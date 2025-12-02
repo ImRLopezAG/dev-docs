@@ -1,0 +1,396 @@
+---
+title: IAM Best Practices
+description: Security recommendations and guidelines for AWS IAM
+---
+
+Follow these best practices to secure your AWS accounts and resources using IAM effectively.
+
+<Callout type="error" title="Critical Security">
+IAM is the foundation of AWS security. Misconfigurations can lead to data breaches, unauthorized access, and significant financial impact.
+</Callout>
+
+## Root Account Protection
+
+The root account has unrestricted access to all resources. Protect it aggressively.
+
+<Steps>
+<Step>
+### Enable MFA on Root Account
+
+```bash title="Check Root MFA Status"
+aws iam get-account-summary --query 'SummaryMap.AccountMFAEnabled'
+```
+
+Use a hardware MFA device if possible (YubiKey, etc.).
+</Step>
+<Step>
+### Never Use Root for Daily Tasks
+
+Create IAM users with appropriate permissions instead.
+</Step>
+<Step>
+### Delete Root Access Keys
+
+```bash title="List Root Access Keys"
+aws iam list-access-keys
+```
+
+If any exist, delete them immediately.
+</Step>
+<Step>
+### Enable Billing Alerts
+
+Monitor for unexpected charges that might indicate compromised credentials.
+</Step>
+</Steps>
+
+## Credential Management
+
+### Multi-Factor Authentication (MFA)
+
+<Callout type="warn">
+Enable MFA for all users, especially those with console access or privileged permissions.
+</Callout>
+
+```bash title="List Users Without MFA"
+aws iam generate-credential-report
+aws iam get-credential-report --query 'Content' --output text | base64 -d | grep 'false' | cut -d',' -f1
+```
+
+### Access Key Rotation
+
+Rotate access keys regularly (every 90 days is common):
+
+```bash title="Find Old Access Keys"
+aws iam list-access-keys --user-name developer --query 'AccessKeyMetadata[?CreateDate<`2024-01-01`]'
+```
+
+<Steps>
+<Step>
+### Create New Key
+
+```bash
+aws iam create-access-key --user-name developer
+```
+</Step>
+<Step>
+### Update Applications
+
+Deploy new credentials to all applications.
+</Step>
+<Step>
+### Deactivate Old Key
+
+```bash
+aws iam update-access-key --user-name developer --access-key-id OLD_KEY --status Inactive
+```
+</Step>
+<Step>
+### Delete Old Key
+
+After confirming everything works:
+
+```bash
+aws iam delete-access-key --user-name developer --access-key-id OLD_KEY
+```
+</Step>
+</Steps>
+
+### Password Policy
+
+Enforce strong passwords account-wide:
+
+```bash title="Set Strong Password Policy"
+aws iam update-account-password-policy \
+  --minimum-password-length 14 \
+  --require-symbols \
+  --require-numbers \
+  --require-uppercase-characters \
+  --require-lowercase-characters \
+  --allow-users-to-change-password \
+  --max-password-age 90 \
+  --password-reuse-prevention 24 \
+  --hard-expiry
+```
+
+## Least Privilege Principle
+
+Grant only the permissions necessary to perform a task.
+
+### Start Restrictive
+
+Begin with no permissions and add as needed:
+
+```json title="Minimal S3 Policy"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::my-bucket/specific-path/*"
+    }
+  ]
+}
+```
+
+### Use Access Analyzer
+
+Identify unused permissions:
+
+```bash title="Generate Policy from Activity"
+aws accessanalyzer start-policy-generation \
+  --policy-generation-details '{
+    "principalArn": "arn:aws:iam::123456789012:role/MyRole"
+  }'
+```
+
+### Avoid Wildcards
+
+<Tabs items={['Bad', 'Good']}>
+<Tab value="Bad">
+```json title="Too Permissive"
+{
+  "Effect": "Allow",
+  "Action": "s3:*",
+  "Resource": "*"
+}
+```
+</Tab>
+<Tab value="Good">
+```json title="Specific Permissions"
+{
+  "Effect": "Allow",
+  "Action": [
+    "s3:GetObject",
+    "s3:PutObject"
+  ],
+  "Resource": "arn:aws:s3:::my-bucket/uploads/*"
+}
+```
+</Tab>
+</Tabs>
+
+## Use Roles, Not Users
+
+### For AWS Services
+
+Never embed credentials in code. Use IAM roles:
+
+```json title="Lambda Execution Role"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+### For Cross-Account Access
+
+Use role assumption instead of sharing credentials:
+
+```bash title="Assume Role from Another Account"
+aws sts assume-role \
+  --role-arn arn:aws:iam::TARGET:role/CrossAccountRole \
+  --role-session-name my-session
+```
+
+### For EC2 Instances
+
+Attach instance profiles instead of storing credentials:
+
+```bash title="Attach Instance Profile"
+aws ec2 associate-iam-instance-profile \
+  --instance-id i-1234567890abcdef0 \
+  --iam-instance-profile Name=MyInstanceProfile
+```
+
+## Use Groups for Permissions
+
+Organize users into groups and attach policies to groups:
+
+```bash title="Create Group and Attach Policy"
+# Create group
+aws iam create-group --group-name Developers
+
+# Attach policy to group
+aws iam attach-group-policy \
+  --group-name Developers \
+  --policy-arn arn:aws:iam::aws:policy/PowerUserAccess
+
+# Add user to group
+aws iam add-user-to-group \
+  --user-name developer \
+  --group-name Developers
+```
+
+Benefits:
+- Easier to manage permissions at scale
+- Clear audit trail
+- Consistent permissions for similar roles
+
+## Use Permission Boundaries
+
+Limit the maximum permissions users/roles can have:
+
+```json title="Developer Boundary"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:*",
+        "dynamodb:*",
+        "lambda:*",
+        "logs:*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Deny",
+      "Action": [
+        "iam:*",
+        "organizations:*",
+        "account:*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+```bash title="Apply Boundary"
+aws iam put-user-permissions-boundary \
+  --user-name developer \
+  --permissions-boundary arn:aws:iam::123456789012:policy/DeveloperBoundary
+```
+
+## Monitoring and Auditing
+
+### Enable CloudTrail
+
+Log all API calls for security analysis:
+
+```bash title="Create Trail"
+aws cloudtrail create-trail \
+  --name security-trail \
+  --s3-bucket-name my-cloudtrail-bucket \
+  --is-multi-region-trail \
+  --enable-log-file-validation
+```
+
+### Monitor with CloudWatch
+
+Create alarms for suspicious activity:
+
+```bash title="Alarm for Root Login"
+aws cloudwatch put-metric-alarm \
+  --alarm-name RootAccountUsage \
+  --metric-name RootAccountUsageCount \
+  --namespace CloudTrailMetrics \
+  --statistic Sum \
+  --period 300 \
+  --threshold 1 \
+  --comparison-operator GreaterThanOrEqualToThreshold \
+  --evaluation-periods 1 \
+  --alarm-actions arn:aws:sns:us-east-1:123456789012:security-alerts
+```
+
+### Regular Credential Reports
+
+Generate and review credential reports:
+
+```bash title="Generate Credential Report"
+aws iam generate-credential-report
+aws iam get-credential-report --output text --query Content | base64 -d > report.csv
+```
+
+Check for:
+- Users without MFA
+- Unused credentials
+- Old access keys
+- Root account usage
+
+## Secure Conditions
+
+Add conditions to policies for extra security:
+
+### Require MFA
+
+```json title="MFA Required"
+{
+  "Condition": {
+    "Bool": {
+      "aws:MultiFactorAuthPresent": "true"
+    }
+  }
+}
+```
+
+### Restrict by IP
+
+```json title="IP Restriction"
+{
+  "Condition": {
+    "IpAddress": {
+      "aws:SourceIp": ["10.0.0.0/8"]
+    }
+  }
+}
+```
+
+### Require HTTPS
+
+```json title="HTTPS Required"
+{
+  "Condition": {
+    "Bool": {
+      "aws:SecureTransport": "true"
+    }
+  }
+}
+```
+
+### Time-Based Access
+
+```json title="Business Hours Only"
+{
+  "Condition": {
+    "DateGreaterThan": {"aws:CurrentTime": "2024-01-01T08:00:00Z"},
+    "DateLessThan": {"aws:CurrentTime": "2024-01-01T18:00:00Z"}
+  }
+}
+```
+
+## Security Checklist
+
+<Callout type="info" title="IAM Security Checklist">
+- [ ] Root account has MFA enabled
+- [ ] Root account has no access keys
+- [ ] All users have MFA enabled
+- [ ] Strong password policy is configured
+- [ ] Access keys are rotated regularly (< 90 days)
+- [ ] Unused users and roles are removed
+- [ ] Least privilege is applied
+- [ ] Roles are used instead of long-term credentials
+- [ ] CloudTrail is enabled
+- [ ] Access Analyzer is configured
+- [ ] Regular credential report reviews
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="IAM CLI" href="/docs/aws/iam/cli" description="Complete CLI reference" />
+  <Card title="CloudTrail" href="/docs/aws/cloudwatch" description="Audit and monitoring" />
+</Cards>

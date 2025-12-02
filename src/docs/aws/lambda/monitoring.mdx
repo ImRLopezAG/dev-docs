@@ -1,0 +1,605 @@
+---
+title: Lambda Monitoring
+description: Complete guide to Lambda observability with CloudWatch, X-Ray, and best practices
+---
+
+Effective monitoring is essential for maintaining healthy Lambda functions. This guide covers logs, metrics, tracing, and alerting strategies.
+
+## Monitoring Overview
+
+<Callout type="info" title="The Three Pillars">
+- **Logs**: Detailed function output and errors
+- **Metrics**: Quantitative performance data
+- **Traces**: Request flow across services
+</Callout>
+
+## CloudWatch Logs
+
+Lambda automatically sends logs to CloudWatch:
+
+### Log Groups
+
+Each function has a log group: `/aws/lambda/function-name`
+
+```bash title="View log groups"
+aws logs describe-log-groups \
+  --log-group-name-prefix /aws/lambda/
+
+# Get recent logs
+aws logs tail /aws/lambda/my-function --follow
+```
+
+### Log Streams
+
+Each function instance creates a log stream:
+
+```bash title="List log streams"
+aws logs describe-log-streams \
+  --log-group-name /aws/lambda/my-function \
+  --order-by LastEventTime \
+  --descending \
+  --limit 5
+```
+
+### Querying Logs
+
+<Tabs items={['Filter Pattern', 'Insights Query']}>
+<Tab value="Filter Pattern">
+```bash title="Filter logs"
+aws logs filter-log-events \
+  --log-group-name /aws/lambda/my-function \
+  --filter-pattern "ERROR" \
+  --start-time $(date -d '1 hour ago' +%s000)
+```
+
+Common patterns:
+- `ERROR` - Lines containing ERROR
+- `"Error"` - Exact match
+- `?ERROR ?WARN` - ERROR or WARN
+- `{ $.level = "error" }` - JSON field match
+</Tab>
+<Tab value="Insights Query">
+```bash title="CloudWatch Insights"
+aws logs start-query \
+  --log-group-name /aws/lambda/my-function \
+  --start-time $(date -d '24 hours ago' +%s) \
+  --end-time $(date +%s) \
+  --query-string '
+    fields @timestamp, @message
+    | filter @message like /ERROR/
+    | sort @timestamp desc
+    | limit 20
+  '
+```
+
+Useful queries:
+
+```sql title="Error rate by hour"
+filter @type = "REPORT"
+| stats count(*) as invocations,
+        sum(strcontains(@message, "ERROR")) as errors
+        by bin(1h)
+| sort by bin desc
+```
+
+```sql title="Cold starts"
+filter @type = "REPORT"
+| filter @message like /Init Duration/
+| parse @message /Init Duration: (?<initDuration>.*?) ms/
+| stats count(*) as coldStarts, avg(initDuration) as avgInitMs by bin(1h)
+```
+
+```sql title="P99 latency"
+filter @type = "REPORT"
+| stats pct(@duration, 99) as p99, pct(@duration, 95) as p95, avg(@duration) as avg by bin(5m)
+```
+</Tab>
+</Tabs>
+
+### Structured Logging
+
+Use JSON for better querying:
+
+<Tabs items={['Node.js', 'Python']}>
+<Tab value="Node.js">
+```javascript title="Structured logging"
+const log = (level, message, data = {}) => {
+  console.log(JSON.stringify({
+    level,
+    message,
+    timestamp: new Date().toISOString(),
+    requestId: globalRequestId,
+    ...data
+  }));
+};
+
+export const handler = async (event, context) => {
+  globalRequestId = context.awsRequestId;
+  
+  log('info', 'Processing request', { 
+    path: event.path, 
+    method: event.httpMethod 
+  });
+  
+  try {
+    const result = await processEvent(event);
+    log('info', 'Request successful', { statusCode: 200 });
+    return result;
+  } catch (error) {
+    log('error', 'Request failed', { 
+      error: error.message, 
+      stack: error.stack 
+    });
+    throw error;
+  }
+};
+```
+</Tab>
+<Tab value="Python">
+```python title="Structured logging"
+import json
+import logging
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record):
+        log_record = {
+            'level': record.levelname,
+            'message': record.getMessage(),
+            'timestamp': self.formatTime(record),
+            'requestId': getattr(record, 'requestId', None)
+        }
+        return json.dumps(log_record)
+
+handler = logging.StreamHandler()
+handler.setFormatter(JsonFormatter())
+logger.addHandler(handler)
+
+def handler(event, context):
+    logger.info('Processing request', extra={'requestId': context.aws_request_id})
+    # Process event
+```
+</Tab>
+</Tabs>
+
+### Lambda Powertools Logger
+
+Use AWS Lambda Powertools for enhanced logging:
+
+```javascript title="Using Powertools"
+import { Logger } from '@aws-lambda-powertools/logger';
+
+const logger = new Logger({ serviceName: 'my-service' });
+
+export const handler = async (event, context) => {
+  logger.addContext(context);
+  
+  logger.info('Processing order', { orderId: event.orderId });
+  
+  try {
+    const result = await processOrder(event);
+    logger.info('Order processed', { result });
+    return result;
+  } catch (error) {
+    logger.error('Order failed', { error });
+    throw error;
+  }
+};
+```
+
+## CloudWatch Metrics
+
+Lambda publishes metrics automatically:
+
+### Key Metrics
+
+| Metric | Description | Unit |
+|--------|-------------|------|
+| **Invocations** | Number of invocations | Count |
+| **Duration** | Execution time | Milliseconds |
+| **Errors** | Invocations with errors | Count |
+| **Throttles** | Throttled invocations | Count |
+| **ConcurrentExecutions** | Concurrent runs | Count |
+| **IteratorAge** | Stream processing lag | Milliseconds |
+| **DeadLetterErrors** | DLQ delivery failures | Count |
+
+### Getting Metrics
+
+```bash title="Get invocation count"
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/Lambda \
+  --metric-name Invocations \
+  --dimensions Name=FunctionName,Value=my-function \
+  --start-time $(date -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date +%Y-%m-%dT%H:%M:%SZ) \
+  --period 300 \
+  --statistics Sum
+```
+
+```bash title="Get duration percentiles"
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/Lambda \
+  --metric-name Duration \
+  --dimensions Name=FunctionName,Value=my-function \
+  --start-time $(date -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date +%Y-%m-%dT%H:%M:%SZ) \
+  --period 300 \
+  --extended-statistics p50 p95 p99
+```
+
+### Custom Metrics
+
+Publish your own metrics:
+
+<Tabs items={['EMF', 'PutMetricData']}>
+<Tab value="EMF">
+Embedded Metric Format—publish metrics in logs:
+
+```javascript title="EMF custom metrics"
+import { MetricUnits, Metrics } from '@aws-lambda-powertools/metrics';
+
+const metrics = new Metrics({ 
+  namespace: 'MyApp', 
+  serviceName: 'OrderService' 
+});
+
+export const handler = async (event) => {
+  metrics.addDimension('Environment', process.env.ENVIRONMENT);
+  
+  const startTime = Date.now();
+  const result = await processOrder(event);
+  const duration = Date.now() - startTime;
+  
+  metrics.addMetric('OrderProcessingTime', MetricUnits.Milliseconds, duration);
+  metrics.addMetric('OrderValue', MetricUnits.Count, result.total);
+  
+  metrics.publishStoredMetrics();
+  
+  return result;
+};
+```
+</Tab>
+<Tab value="PutMetricData">
+Direct CloudWatch API:
+
+```javascript title="PutMetricData"
+import { CloudWatchClient, PutMetricDataCommand } from "@aws-sdk/client-cloudwatch";
+
+const cw = new CloudWatchClient({});
+
+const publishMetric = async (name, value, unit = 'Count') => {
+  await cw.send(new PutMetricDataCommand({
+    Namespace: 'MyApp',
+    MetricData: [{
+      MetricName: name,
+      Value: value,
+      Unit: unit,
+      Dimensions: [
+        { Name: 'FunctionName', Value: process.env.AWS_LAMBDA_FUNCTION_NAME }
+      ],
+      Timestamp: new Date()
+    }]
+  }));
+};
+```
+
+<Callout type="warn">
+PutMetricData adds latency. Use EMF for high-volume metrics.
+</Callout>
+</Tab>
+</Tabs>
+
+## X-Ray Tracing
+
+Distributed tracing across services:
+
+### Enable X-Ray
+
+```bash title="Enable active tracing"
+aws lambda update-function-configuration \
+  --function-name my-function \
+  --tracing-config Mode=Active
+```
+
+### Add X-Ray SDK
+
+<Tabs items={['Node.js', 'Python']}>
+<Tab value="Node.js">
+```javascript title="X-Ray tracing"
+import AWSXRay from 'aws-xray-sdk-core';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+
+// Instrument AWS SDK
+const dynamodb = AWSXRay.captureAWSv3Client(new DynamoDBClient({}));
+
+export const handler = async (event) => {
+  // Create custom subsegment
+  const segment = AWSXRay.getSegment();
+  const subsegment = segment.addNewSubsegment('ProcessOrder');
+  
+  try {
+    subsegment.addAnnotation('orderId', event.orderId);
+    subsegment.addMetadata('orderDetails', event);
+    
+    const result = await processOrder(event);
+    
+    subsegment.close();
+    return result;
+  } catch (error) {
+    subsegment.addError(error);
+    subsegment.close();
+    throw error;
+  }
+};
+```
+</Tab>
+<Tab value="Python">
+```python title="X-Ray tracing"
+from aws_xray_sdk.core import xray_recorder
+from aws_xray_sdk.core import patch_all
+import boto3
+
+# Patch AWS SDK
+patch_all()
+
+dynamodb = boto3.resource('dynamodb')
+
+def handler(event, context):
+    # Create custom subsegment
+    with xray_recorder.in_subsegment('ProcessOrder') as subsegment:
+        subsegment.put_annotation('orderId', event['orderId'])
+        subsegment.put_metadata('orderDetails', event)
+        
+        result = process_order(event)
+        return result
+```
+</Tab>
+</Tabs>
+
+### Lambda Powertools Tracer
+
+```javascript title="Powertools Tracer"
+import { Tracer } from '@aws-lambda-powertools/tracer';
+
+const tracer = new Tracer({ serviceName: 'OrderService' });
+
+export const handler = async (event, context) => {
+  const segment = tracer.getSegment();
+  
+  // Automatic annotation of handler
+  tracer.captureMethod(processOrder);
+  
+  const result = await processOrder(event);
+  
+  tracer.addResponseAsMetadata(result);
+  
+  return result;
+};
+```
+
+## CloudWatch Alarms
+
+Set up alerts for Lambda issues:
+
+<Tabs items={['Errors', 'Throttles', 'Duration', 'Concurrent']}>
+<Tab value="Errors">
+```bash title="Error rate alarm"
+aws cloudwatch put-metric-alarm \
+  --alarm-name "Lambda-HighErrorRate" \
+  --metric-name Errors \
+  --namespace AWS/Lambda \
+  --dimensions Name=FunctionName,Value=my-function \
+  --statistic Sum \
+  --period 300 \
+  --threshold 5 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 2 \
+  --treat-missing-data notBreaching \
+  --alarm-actions arn:aws:sns:us-east-1:123456789012:alerts
+```
+</Tab>
+<Tab value="Throttles">
+```bash title="Throttle alarm"
+aws cloudwatch put-metric-alarm \
+  --alarm-name "Lambda-Throttles" \
+  --metric-name Throttles \
+  --namespace AWS/Lambda \
+  --dimensions Name=FunctionName,Value=my-function \
+  --statistic Sum \
+  --period 60 \
+  --threshold 1 \
+  --comparison-operator GreaterThanOrEqualToThreshold \
+  --evaluation-periods 1 \
+  --alarm-actions arn:aws:sns:us-east-1:123456789012:alerts
+```
+</Tab>
+<Tab value="Duration">
+```bash title="Duration alarm"
+aws cloudwatch put-metric-alarm \
+  --alarm-name "Lambda-SlowExecution" \
+  --metric-name Duration \
+  --namespace AWS/Lambda \
+  --dimensions Name=FunctionName,Value=my-function \
+  --extended-statistic p95 \
+  --period 300 \
+  --threshold 3000 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 2 \
+  --alarm-actions arn:aws:sns:us-east-1:123456789012:alerts
+```
+</Tab>
+<Tab value="Concurrent">
+```bash title="Concurrency alarm"
+aws cloudwatch put-metric-alarm \
+  --alarm-name "Lambda-HighConcurrency" \
+  --metric-name ConcurrentExecutions \
+  --namespace AWS/Lambda \
+  --dimensions Name=FunctionName,Value=my-function \
+  --statistic Maximum \
+  --period 60 \
+  --threshold 800 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 2 \
+  --alarm-actions arn:aws:sns:us-east-1:123456789012:alerts
+```
+</Tab>
+</Tabs>
+
+## Lambda Insights
+
+Enhanced monitoring with Lambda Insights:
+
+```bash title="Enable Lambda Insights"
+aws lambda update-function-configuration \
+  --function-name my-function \
+  --layers "arn:aws:lambda:us-east-1:580247275435:layer:LambdaInsightsExtension:38"
+```
+
+Lambda Insights provides:
+- CPU utilization
+- Memory utilization
+- Network I/O
+- Disk I/O
+- Process-level metrics
+
+## Dashboard Setup
+
+Create a comprehensive dashboard:
+
+```bash title="Create CloudWatch dashboard"
+aws cloudwatch put-dashboard \
+  --dashboard-name "LambdaMonitoring" \
+  --dashboard-body '{
+    "widgets": [
+      {
+        "type": "metric",
+        "x": 0, "y": 0,
+        "width": 12, "height": 6,
+        "properties": {
+          "title": "Invocations",
+          "metrics": [
+            ["AWS/Lambda", "Invocations", "FunctionName", "my-function"]
+          ],
+          "period": 300,
+          "stat": "Sum"
+        }
+      },
+      {
+        "type": "metric",
+        "x": 12, "y": 0,
+        "width": 12, "height": 6,
+        "properties": {
+          "title": "Duration",
+          "metrics": [
+            ["AWS/Lambda", "Duration", "FunctionName", "my-function", {"stat": "p50"}],
+            ["...", {"stat": "p95"}],
+            ["...", {"stat": "p99"}]
+          ],
+          "period": 300
+        }
+      },
+      {
+        "type": "metric",
+        "x": 0, "y": 6,
+        "width": 12, "height": 6,
+        "properties": {
+          "title": "Errors & Throttles",
+          "metrics": [
+            ["AWS/Lambda", "Errors", "FunctionName", "my-function"],
+            [".", "Throttles", ".", "."]
+          ],
+          "period": 300,
+          "stat": "Sum"
+        }
+      }
+    ]
+  }'
+```
+
+## Log Retention
+
+Configure log retention to manage costs:
+
+```bash title="Set log retention"
+aws logs put-retention-policy \
+  --log-group-name /aws/lambda/my-function \
+  --retention-in-days 30
+```
+
+| Retention | Use Case |
+|-----------|----------|
+| 1 day | Development/testing |
+| 7 days | Short-lived functions |
+| 30 days | Standard production |
+| 90 days | Compliance needs |
+| Never expire | Audit requirements |
+
+## Debugging Tips
+
+<Steps>
+<Step>
+### Check Invocations
+Are requests reaching your function?
+```bash
+aws logs tail /aws/lambda/my-function --since 1h
+```
+</Step>
+<Step>
+### Check for Errors
+Look at error metrics:
+```bash
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/Lambda \
+  --metric-name Errors \
+  --dimensions Name=FunctionName,Value=my-function \
+  --start-time $(date -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date +%Y-%m-%dT%H:%M:%SZ) \
+  --period 60 \
+  --statistics Sum
+```
+</Step>
+<Step>
+### Check for Throttles
+Are you hitting concurrency limits?
+```bash
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/Lambda \
+  --metric-name Throttles \
+  ...
+```
+</Step>
+<Step>
+### Review Traces
+Use X-Ray to trace request flow:
+```bash
+aws xray get-trace-summaries \
+  --start-time $(date -d '1 hour ago' +%s) \
+  --end-time $(date +%s) \
+  --filter-expression 'service("my-function")'
+```
+</Step>
+</Steps>
+
+## Best Practices
+
+<Callout type="info" title="Monitoring Best Practices">
+1. **Use structured logging** - JSON for easy querying
+2. **Include request IDs** - Correlate logs across services
+3. **Set up alarms** - Errors, throttles, and duration
+4. **Enable X-Ray** - For distributed tracing
+5. **Configure retention** - Balance cost and needs
+6. **Use dashboards** - Visualize key metrics
+7. **Monitor cold starts** - Track initialization performance
+8. **Set up anomaly detection** - For dynamic thresholds
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="Triggers" href="/docs/aws/lambda/triggers" description="Event sources" />
+  <Card title="Layers" href="/docs/aws/lambda/layers" description="Code sharing" />
+  <Card title="Concurrency" href="/docs/aws/lambda/concurrency" description="Scaling" />
+  <Card title="Lambda CLI" href="/docs/aws/lambda/cli" description="CLI reference" />
+</Cards>

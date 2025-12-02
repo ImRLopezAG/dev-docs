@@ -1,0 +1,24 @@
+{
+	"title": "Design Principles",
+	"description": "Fundamental software design principles for writing maintainable, scalable code",
+	"icon": "Lightbulb",
+	"pages": [
+		"index",
+		"---SOLID Principles---",
+		"srp",
+		"ocp",
+		"lsp",
+		"isp",
+		"dip",
+		"---General Principles---",
+		"dry",
+		"kiss",
+		"yagni",
+		"lod",
+		"composition",
+		"tell-dont-ask",
+		"---Architectural Principles---",
+		"separation-of-concerns",
+		"fail-fast"
+	]
+}

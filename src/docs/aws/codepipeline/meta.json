@@ -1,0 +1,6 @@
+{
+	"title": "CodePipeline",
+	"description": "CI/CD Pipeline Service",
+	"icon": "GitBranch",
+	"pages": ["index", "cli"]
+}

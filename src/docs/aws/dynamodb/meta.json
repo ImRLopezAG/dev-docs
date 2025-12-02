@@ -1,0 +1,6 @@
+{
+	"title": "DynamoDB",
+	"description": "NoSQL Database Service",
+	"icon": "Table",
+	"pages": ["index", "tables", "indexes", "streams", "capacity", "cli"]
+}

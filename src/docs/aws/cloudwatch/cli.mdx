@@ -1,0 +1,472 @@
+---
+title: CloudWatch CLI Reference
+description: AWS CLI commands for CloudWatch
+---
+
+Complete reference for AWS CloudWatch CLI commands with examples.
+
+## Metrics
+
+### List Metrics
+
+```bash
+# List all metrics
+aws cloudwatch list-metrics
+
+# Filter by namespace
+aws cloudwatch list-metrics --namespace AWS/EC2
+
+# Filter by dimension
+aws cloudwatch list-metrics \
+  --namespace AWS/EC2 \
+  --dimensions Name=InstanceId,Value=i-1234567890abcdef0
+```
+
+### Get Metric Statistics
+
+```bash
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/EC2 \
+  --metric-name CPUUtilization \
+  --dimensions Name=InstanceId,Value=i-1234567890abcdef0 \
+  --start-time $(date -u -v-1H +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  --period 300 \
+  --statistics Average Maximum Minimum
+```
+
+### Get Metric Data (Multiple Metrics)
+
+```bash
+aws cloudwatch get-metric-data \
+  --metric-data-queries '[
+    {
+      "Id": "cpu",
+      "MetricStat": {
+        "Metric": {
+          "Namespace": "AWS/EC2",
+          "MetricName": "CPUUtilization",
+          "Dimensions": [{"Name": "InstanceId", "Value": "i-123"}]
+        },
+        "Period": 300,
+        "Stat": "Average"
+      }
+    },
+    {
+      "Id": "network",
+      "MetricStat": {
+        "Metric": {
+          "Namespace": "AWS/EC2",
+          "MetricName": "NetworkIn",
+          "Dimensions": [{"Name": "InstanceId", "Value": "i-123"}]
+        },
+        "Period": 300,
+        "Stat": "Sum"
+      }
+    }
+  ]' \
+  --start-time $(date -u -v-1H +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ)
+```
+
+### Put Metric Data (Custom Metrics)
+
+```bash
+aws cloudwatch put-metric-data \
+  --namespace MyApp \
+  --metric-name RequestCount \
+  --value 1 \
+  --unit Count \
+  --dimensions Environment=prod,Endpoint=/api/users
+
+# Multiple data points
+aws cloudwatch put-metric-data \
+  --namespace MyApp \
+  --metric-data '[
+    {
+      "MetricName": "RequestLatency",
+      "Value": 150,
+      "Unit": "Milliseconds",
+      "Dimensions": [{"Name": "Endpoint", "Value": "/api/users"}]
+    },
+    {
+      "MetricName": "RequestCount",
+      "Value": 1,
+      "Unit": "Count",
+      "Dimensions": [{"Name": "Endpoint", "Value": "/api/users"}]
+    }
+  ]'
+```
+
+## Alarms
+
+### Create Alarm
+
+```bash
+aws cloudwatch put-metric-alarm \
+  --alarm-name high-cpu \
+  --alarm-description "CPU utilization exceeds 80%" \
+  --namespace AWS/EC2 \
+  --metric-name CPUUtilization \
+  --dimensions Name=InstanceId,Value=i-1234567890abcdef0 \
+  --statistic Average \
+  --period 300 \
+  --threshold 80 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 2 \
+  --datapoints-to-alarm 2 \
+  --treat-missing-data notBreaching \
+  --alarm-actions arn:aws:sns:us-east-1:123456789012:alerts \
+  --ok-actions arn:aws:sns:us-east-1:123456789012:alerts
+```
+
+### Create Composite Alarm
+
+```bash
+aws cloudwatch put-composite-alarm \
+  --alarm-name critical-issues \
+  --alarm-rule "ALARM(high-cpu) AND ALARM(high-memory)" \
+  --alarm-actions arn:aws:sns:us-east-1:123456789012:critical
+```
+
+### Describe Alarms
+
+```bash
+# All alarms
+aws cloudwatch describe-alarms
+
+# By state
+aws cloudwatch describe-alarms --state-value ALARM
+
+# By name
+aws cloudwatch describe-alarms --alarm-names high-cpu high-memory
+
+# Alarm history
+aws cloudwatch describe-alarm-history \
+  --alarm-name high-cpu \
+  --history-item-type StateUpdate
+```
+
+### Set Alarm State (Testing)
+
+```bash
+aws cloudwatch set-alarm-state \
+  --alarm-name high-cpu \
+  --state-value ALARM \
+  --state-reason "Testing alarm"
+```
+
+### Delete Alarm
+
+```bash
+aws cloudwatch delete-alarms --alarm-names high-cpu high-memory
+```
+
+### Enable/Disable Alarm Actions
+
+```bash
+# Disable
+aws cloudwatch disable-alarm-actions --alarm-names high-cpu
+
+# Enable
+aws cloudwatch enable-alarm-actions --alarm-names high-cpu
+```
+
+## Anomaly Detector
+
+### Create Anomaly Detector
+
+```bash
+aws cloudwatch put-anomaly-detector \
+  --namespace AWS/EC2 \
+  --metric-name CPUUtilization \
+  --dimensions Name=InstanceId,Value=i-1234567890abcdef0 \
+  --stat Average
+```
+
+### Describe Anomaly Detectors
+
+```bash
+aws cloudwatch describe-anomaly-detectors \
+  --namespace AWS/EC2 \
+  --metric-name CPUUtilization
+```
+
+### Delete Anomaly Detector
+
+```bash
+aws cloudwatch delete-anomaly-detector \
+  --namespace AWS/EC2 \
+  --metric-name CPUUtilization \
+  --dimensions Name=InstanceId,Value=i-1234567890abcdef0 \
+  --stat Average
+```
+
+## Dashboards
+
+### Create/Update Dashboard
+
+```bash
+aws cloudwatch put-dashboard \
+  --dashboard-name my-dashboard \
+  --dashboard-body file://dashboard.json
+```
+
+### List Dashboards
+
+```bash
+aws cloudwatch list-dashboards
+```
+
+### Get Dashboard
+
+```bash
+aws cloudwatch get-dashboard --dashboard-name my-dashboard
+```
+
+### Delete Dashboard
+
+```bash
+aws cloudwatch delete-dashboards --dashboard-names my-dashboard
+```
+
+## CloudWatch Logs
+
+### Log Groups
+
+```bash
+# Create log group
+aws logs create-log-group --log-group-name /my-app/production
+
+# List log groups
+aws logs describe-log-groups
+
+# Filter log groups
+aws logs describe-log-groups --log-group-name-prefix /my-app
+
+# Delete log group
+aws logs delete-log-group --log-group-name /my-app/production
+```
+
+### Retention Policy
+
+```bash
+aws logs put-retention-policy \
+  --log-group-name /my-app/production \
+  --retention-in-days 30
+
+# Valid values: 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653
+```
+
+### Log Streams
+
+```bash
+# Create log stream
+aws logs create-log-stream \
+  --log-group-name /my-app/production \
+  --log-stream-name app-server-1
+
+# List log streams
+aws logs describe-log-streams \
+  --log-group-name /my-app/production \
+  --order-by LastEventTime \
+  --descending
+
+# Delete log stream
+aws logs delete-log-stream \
+  --log-group-name /my-app/production \
+  --log-stream-name app-server-1
+```
+
+### Put Log Events
+
+```bash
+aws logs put-log-events \
+  --log-group-name /my-app/production \
+  --log-stream-name app-server-1 \
+  --log-events \
+    timestamp=$(date +%s000),message="Application started" \
+    timestamp=$(date +%s000),message="Ready to accept connections"
+```
+
+### Filter Log Events
+
+```bash
+# Search logs
+aws logs filter-log-events \
+  --log-group-name /my-app/production \
+  --filter-pattern "ERROR"
+
+# With time range
+aws logs filter-log-events \
+  --log-group-name /my-app/production \
+  --filter-pattern '{ $.level = "ERROR" }' \
+  --start-time $(date -u -v-1H +%s000) \
+  --end-time $(date -u +%s000)
+
+# Specific log stream
+aws logs filter-log-events \
+  --log-group-name /my-app/production \
+  --log-stream-names app-server-1 app-server-2 \
+  --filter-pattern "ERROR"
+```
+
+### Get Log Events
+
+```bash
+aws logs get-log-events \
+  --log-group-name /my-app/production \
+  --log-stream-name app-server-1 \
+  --start-time $(date -u -v-1H +%s000) \
+  --limit 100
+```
+
+### Metric Filters
+
+```bash
+# Create metric filter
+aws logs put-metric-filter \
+  --log-group-name /my-app/production \
+  --filter-name error-count \
+  --filter-pattern '{ $.level = "ERROR" }' \
+  --metric-transformations \
+    metricName=ErrorCount,metricNamespace=MyApp,metricValue=1
+
+# List metric filters
+aws logs describe-metric-filters \
+  --log-group-name /my-app/production
+
+# Delete metric filter
+aws logs delete-metric-filter \
+  --log-group-name /my-app/production \
+  --filter-name error-count
+```
+
+### Subscription Filters
+
+```bash
+# Create subscription filter (to Lambda)
+aws logs put-subscription-filter \
+  --log-group-name /my-app/production \
+  --filter-name process-logs \
+  --filter-pattern "" \
+  --destination-arn arn:aws:lambda:us-east-1:123456789012:function:log-processor
+
+# List subscription filters
+aws logs describe-subscription-filters \
+  --log-group-name /my-app/production
+
+# Delete subscription filter
+aws logs delete-subscription-filter \
+  --log-group-name /my-app/production \
+  --filter-name process-logs
+```
+
+## CloudWatch Logs Insights
+
+### Start Query
+
+```bash
+aws logs start-query \
+  --log-group-names /my-app/production \
+  --start-time $(date -u -v-1H +%s) \
+  --end-time $(date -u +%s) \
+  --query-string 'fields @timestamp, @message | filter @message like /ERROR/ | sort @timestamp desc | limit 100'
+```
+
+### Get Query Results
+
+```bash
+aws logs get-query-results --query-id abc123-def456
+```
+
+### Stop Query
+
+```bash
+aws logs stop-query --query-id abc123-def456
+```
+
+### Describe Queries
+
+```bash
+aws logs describe-queries --log-group-name /my-app/production
+```
+
+## Export to S3
+
+```bash
+aws logs create-export-task \
+  --log-group-name /my-app/production \
+  --from $(date -u -v-7d +%s000) \
+  --to $(date -u +%s000) \
+  --destination my-log-archive-bucket \
+  --destination-prefix exports/my-app
+```
+
+## Tags
+
+```bash
+# Tag log group
+aws logs tag-log-group \
+  --log-group-name /my-app/production \
+  --tags Environment=prod,Team=backend
+
+# List tags
+aws logs list-tags-log-group --log-group-name /my-app/production
+
+# Untag
+aws logs untag-log-group \
+  --log-group-name /my-app/production \
+  --tags Environment
+```
+
+## Resource Policies
+
+```bash
+# Put resource policy (for cross-account)
+aws logs put-resource-policy \
+  --policy-name AllowCrossAccountLogs \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": {"AWS": "234567890123"},
+      "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+      "Resource": "arn:aws:logs:us-east-1:123456789012:log-group:/shared/*"
+    }]
+  }'
+
+# Describe resource policies
+aws logs describe-resource-policies
+```
+
+## Insights Rules
+
+```bash
+# Put insight rule
+aws cloudwatch put-insight-rule \
+  --rule-name my-rule \
+  --rule-state ENABLED \
+  --rule-definition '{
+    "Schema": {
+      "Name": "CloudWatchLogRule",
+      "Version": 1
+    },
+    "LogGroupNames": ["/my-app/production"],
+    "LogFormat": "JSON",
+    "Fields": {
+      "level": "$.level"
+    },
+    "AggregateOn": "Count"
+  }'
+
+# Get insight rule report
+aws cloudwatch get-insight-rule-report \
+  --rule-name my-rule \
+  --start-time $(date -u -v-1H +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  --period 300
+
+# Delete insight rule
+aws cloudwatch delete-insight-rules --rule-names my-rule
+```

@@ -1,0 +1,6 @@
+{
+	"title": "Indexing Strategies",
+	"description": "Database index types and optimization",
+	"icon": "ListTree",
+	"pages": ["index", "btree", "hash", "gist-gin", "advanced"]
+}

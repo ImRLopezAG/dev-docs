@@ -1,0 +1,450 @@
+---
+title: CloudFormation CLI Reference
+description: AWS CLI commands for CloudFormation
+---
+
+Complete reference for AWS CloudFormation CLI commands with examples.
+
+## Stack Operations
+
+### Create Stack
+
+```bash
+aws cloudformation create-stack \
+  --stack-name my-stack \
+  --template-body file://template.yaml \
+  --parameters ParameterKey=Environment,ParameterValue=prod \
+  --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+  --tags Key=Project,Value=MyApp
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--stack-name` | Name of the stack (required) |
+| `--template-body` | Template content or file:// |
+| `--template-url` | S3 URL for template |
+| `--parameters` | Stack parameters |
+| `--capabilities` | Required for IAM resources |
+| `--tags` | Resource tags |
+| `--role-arn` | Service role ARN |
+| `--on-failure` | DO_NOTHING, ROLLBACK, DELETE |
+| `--disable-rollback` | Disable rollback on failure |
+| `--timeout-in-minutes` | Stack creation timeout |
+
+### Update Stack
+
+```bash
+aws cloudformation update-stack \
+  --stack-name my-stack \
+  --template-body file://template.yaml \
+  --parameters ParameterKey=Environment,ParameterValue=prod \
+  --capabilities CAPABILITY_IAM
+```
+
+### Delete Stack
+
+```bash
+aws cloudformation delete-stack --stack-name my-stack
+
+# With retained resources
+aws cloudformation delete-stack \
+  --stack-name my-stack \
+  --retain-resources LogicalResourceId1 LogicalResourceId2
+```
+
+### Describe Stack
+
+```bash
+# Get stack details
+aws cloudformation describe-stacks --stack-name my-stack
+
+# List all stacks
+aws cloudformation list-stacks \
+  --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE
+
+# Get stack resources
+aws cloudformation describe-stack-resources --stack-name my-stack
+
+# Get specific resource
+aws cloudformation describe-stack-resource \
+  --stack-name my-stack \
+  --logical-resource-id MyBucket
+```
+
+### Get Stack Outputs
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name my-stack \
+  --query 'Stacks[0].Outputs'
+```
+
+## Wait Commands
+
+```bash
+# Wait for create to complete
+aws cloudformation wait stack-create-complete --stack-name my-stack
+
+# Wait for update to complete
+aws cloudformation wait stack-update-complete --stack-name my-stack
+
+# Wait for delete to complete
+aws cloudformation wait stack-delete-complete --stack-name my-stack
+
+# Wait for stack to exist
+aws cloudformation wait stack-exists --stack-name my-stack
+```
+
+## Stack Events
+
+```bash
+# Get stack events
+aws cloudformation describe-stack-events --stack-name my-stack
+
+# Get recent events
+aws cloudformation describe-stack-events \
+  --stack-name my-stack \
+  --max-items 10
+```
+
+## Change Sets
+
+### Create Change Set
+
+```bash
+aws cloudformation create-change-set \
+  --stack-name my-stack \
+  --change-set-name my-change-set \
+  --template-body file://template.yaml \
+  --parameters ParameterKey=Environment,ParameterValue=prod \
+  --capabilities CAPABILITY_IAM
+```
+
+### Describe Change Set
+
+```bash
+aws cloudformation describe-change-set \
+  --stack-name my-stack \
+  --change-set-name my-change-set
+```
+
+### List Change Sets
+
+```bash
+aws cloudformation list-change-sets --stack-name my-stack
+```
+
+### Execute Change Set
+
+```bash
+aws cloudformation execute-change-set \
+  --stack-name my-stack \
+  --change-set-name my-change-set
+```
+
+### Delete Change Set
+
+```bash
+aws cloudformation delete-change-set \
+  --stack-name my-stack \
+  --change-set-name my-change-set
+```
+
+## Template Operations
+
+### Validate Template
+
+```bash
+aws cloudformation validate-template \
+  --template-body file://template.yaml
+
+# From S3
+aws cloudformation validate-template \
+  --template-url https://s3.amazonaws.com/bucket/template.yaml
+```
+
+### Get Template
+
+```bash
+aws cloudformation get-template --stack-name my-stack
+
+# Get original template
+aws cloudformation get-template \
+  --stack-name my-stack \
+  --template-stage Original
+```
+
+### Get Template Summary
+
+```bash
+aws cloudformation get-template-summary \
+  --template-body file://template.yaml
+
+# From stack
+aws cloudformation get-template-summary --stack-name my-stack
+```
+
+### Estimate Template Cost
+
+```bash
+aws cloudformation estimate-template-cost \
+  --template-body file://template.yaml \
+  --parameters ParameterKey=InstanceType,ParameterValue=t3.medium
+```
+
+## Stack Policy
+
+### Set Stack Policy
+
+```bash
+aws cloudformation set-stack-policy \
+  --stack-name my-stack \
+  --stack-policy-body file://policy.json
+```
+
+### Get Stack Policy
+
+```bash
+aws cloudformation get-stack-policy --stack-name my-stack
+```
+
+## Drift Detection
+
+### Detect Drift
+
+```bash
+aws cloudformation detect-stack-drift --stack-name my-stack
+
+# Get drift detection status
+aws cloudformation describe-stack-drift-detection-status \
+  --stack-drift-detection-id abc123
+
+# Get resource drifts
+aws cloudformation describe-stack-resource-drifts \
+  --stack-name my-stack
+```
+
+### Detect Drift on Specific Resources
+
+```bash
+aws cloudformation detect-stack-resource-drift \
+  --stack-name my-stack \
+  --logical-resource-id MyBucket
+```
+
+## Nested Stacks
+
+### List Stack Resources (including nested)
+
+```bash
+aws cloudformation list-stack-resources --stack-name my-stack
+```
+
+### Get Nested Stack
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name arn:aws:cloudformation:us-east-1:123456789012:stack/nested-stack/abc123
+```
+
+## Stack Sets
+
+### Create Stack Set
+
+```bash
+aws cloudformation create-stack-set \
+  --stack-set-name my-stack-set \
+  --template-body file://template.yaml \
+  --parameters ParameterKey=Environment,ParameterValue=prod \
+  --permission-model SELF_MANAGED \
+  --administration-role-arn arn:aws:iam::123456789012:role/Admin \
+  --execution-role-name ExecutionRole
+```
+
+### Create Stack Instances
+
+```bash
+aws cloudformation create-stack-instances \
+  --stack-set-name my-stack-set \
+  --accounts 123456789012 234567890123 \
+  --regions us-east-1 us-west-2
+```
+
+### Update Stack Set
+
+```bash
+aws cloudformation update-stack-set \
+  --stack-set-name my-stack-set \
+  --template-body file://template.yaml
+```
+
+### List Stack Sets
+
+```bash
+aws cloudformation list-stack-sets
+```
+
+### Describe Stack Set
+
+```bash
+aws cloudformation describe-stack-set --stack-set-name my-stack-set
+```
+
+### List Stack Instances
+
+```bash
+aws cloudformation list-stack-instances --stack-set-name my-stack-set
+```
+
+### Delete Stack Instances
+
+```bash
+aws cloudformation delete-stack-instances \
+  --stack-set-name my-stack-set \
+  --accounts 123456789012 \
+  --regions us-east-1 \
+  --no-retain-stacks
+```
+
+### Delete Stack Set
+
+```bash
+aws cloudformation delete-stack-set --stack-set-name my-stack-set
+```
+
+## Imports
+
+### Import Existing Resources
+
+```bash
+# Create change set for import
+aws cloudformation create-change-set \
+  --stack-name my-stack \
+  --change-set-name import-resources \
+  --change-set-type IMPORT \
+  --resources-to-import '[
+    {
+      "ResourceType": "AWS::S3::Bucket",
+      "LogicalResourceId": "MyBucket",
+      "ResourceIdentifier": {"BucketName": "my-existing-bucket"}
+    }
+  ]' \
+  --template-body file://template.yaml
+```
+
+## Exports
+
+### List Exports
+
+```bash
+aws cloudformation list-exports
+```
+
+### List Imports
+
+```bash
+aws cloudformation list-imports --export-name MyExportName
+```
+
+## Rollback
+
+### Cancel Update Rollback
+
+```bash
+aws cloudformation cancel-update-stack --stack-name my-stack
+```
+
+### Continue Update Rollback
+
+```bash
+aws cloudformation continue-update-rollback \
+  --stack-name my-stack \
+  --resources-to-skip LogicalResourceId1
+```
+
+## Tags
+
+```bash
+# Update tags
+aws cloudformation update-stack \
+  --stack-name my-stack \
+  --use-previous-template \
+  --tags Key=Environment,Value=prod Key=Project,Value=MyApp
+```
+
+## Termination Protection
+
+```bash
+# Enable
+aws cloudformation update-termination-protection \
+  --stack-name my-stack \
+  --enable-termination-protection
+
+# Disable
+aws cloudformation update-termination-protection \
+  --stack-name my-stack \
+  --no-enable-termination-protection
+```
+
+## Signals
+
+```bash
+# Send success signal
+aws cloudformation signal-resource \
+  --stack-name my-stack \
+  --logical-resource-id MyASG \
+  --unique-id i-1234567890abcdef0 \
+  --status SUCCESS
+
+# Send failure signal
+aws cloudformation signal-resource \
+  --stack-name my-stack \
+  --logical-resource-id MyASG \
+  --unique-id i-1234567890abcdef0 \
+  --status FAILURE
+```
+
+## Common Workflows
+
+### Deploy with Change Set Review
+
+```bash
+# Create change set
+aws cloudformation create-change-set \
+  --stack-name my-stack \
+  --change-set-name update-$(date +%Y%m%d) \
+  --template-body file://template.yaml \
+  --capabilities CAPABILITY_IAM
+
+# Wait for change set
+aws cloudformation wait change-set-create-complete \
+  --stack-name my-stack \
+  --change-set-name update-$(date +%Y%m%d)
+
+# Review changes
+aws cloudformation describe-change-set \
+  --stack-name my-stack \
+  --change-set-name update-$(date +%Y%m%d) \
+  --query 'Changes[].ResourceChange'
+
+# Execute if approved
+aws cloudformation execute-change-set \
+  --stack-name my-stack \
+  --change-set-name update-$(date +%Y%m%d)
+
+# Wait for update
+aws cloudformation wait stack-update-complete --stack-name my-stack
+```
+
+### Create Stack and Wait
+
+```bash
+aws cloudformation create-stack \
+  --stack-name my-stack \
+  --template-body file://template.yaml \
+  --capabilities CAPABILITY_IAM && \
+aws cloudformation wait stack-create-complete --stack-name my-stack && \
+aws cloudformation describe-stacks --stack-name my-stack --query 'Stacks[0].Outputs'
+```

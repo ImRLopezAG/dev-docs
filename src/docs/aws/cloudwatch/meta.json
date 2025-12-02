@@ -1,0 +1,6 @@
+{
+	"title": "CloudWatch",
+	"description": "Monitoring and Observability",
+	"icon": "Activity",
+	"pages": ["index", "cli"]
+}

@@ -1,0 +1,6 @@
+{
+	"title": "EC2",
+	"description": "Elastic Compute Cloud",
+	"icon": "Server",
+	"pages": ["index", "instance-types", "security-groups", "ebs", "cli"]
+}

@@ -1,0 +1,6 @@
+{
+	"title": "SQS",
+	"description": "Simple Queue Service",
+	"icon": "ListOrdered",
+	"pages": ["index", "cli"]
+}

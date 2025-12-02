@@ -1,0 +1,408 @@
+---
+title: Secrets Manager CLI Reference
+description: AWS CLI commands for Secrets Manager
+---
+
+Complete reference for AWS Secrets Manager CLI commands with examples.
+
+## Secret Management
+
+### Create Secret
+
+```bash
+# String secret
+aws secretsmanager create-secret \
+  --name my-secret \
+  --description "My application secret" \
+  --secret-string "my-secret-value"
+
+# JSON secret
+aws secretsmanager create-secret \
+  --name myapp/db-credentials \
+  --description "Database credentials" \
+  --secret-string '{
+    "username": "admin",
+    "password": "supersecret123",
+    "host": "mydb.abc123.us-east-1.rds.amazonaws.com",
+    "port": 5432
+  }'
+
+# Binary secret
+aws secretsmanager create-secret \
+  --name my-certificate \
+  --secret-binary fileb://certificate.pem
+
+# With custom KMS key
+aws secretsmanager create-secret \
+  --name my-secret \
+  --kms-key-id alias/my-key \
+  --secret-string "my-value"
+
+# With tags
+aws secretsmanager create-secret \
+  --name my-secret \
+  --secret-string "my-value" \
+  --tags Key=Environment,Value=prod Key=Application,Value=myapp
+
+# With replication
+aws secretsmanager create-secret \
+  --name my-secret \
+  --secret-string "my-value" \
+  --add-replica-regions Region=eu-west-1 Region=ap-northeast-1
+```
+
+### Get Secret Value
+
+```bash
+# Current version
+aws secretsmanager get-secret-value \
+  --secret-id my-secret
+
+# Get only the secret string
+aws secretsmanager get-secret-value \
+  --secret-id my-secret \
+  --query SecretString \
+  --output text
+
+# Parse JSON secret
+aws secretsmanager get-secret-value \
+  --secret-id myapp/db-credentials \
+  --query SecretString \
+  --output text | jq -r '.password'
+
+# Specific version stage
+aws secretsmanager get-secret-value \
+  --secret-id my-secret \
+  --version-stage AWSPREVIOUS
+
+# Specific version ID
+aws secretsmanager get-secret-value \
+  --secret-id my-secret \
+  --version-id abc123-def456
+```
+
+### Update Secret
+
+```bash
+# Update secret value
+aws secretsmanager update-secret \
+  --secret-id my-secret \
+  --secret-string "new-secret-value"
+
+# Update JSON secret
+aws secretsmanager update-secret \
+  --secret-id myapp/db-credentials \
+  --secret-string '{
+    "username": "admin",
+    "password": "newsecret456",
+    "host": "mydb.abc123.us-east-1.rds.amazonaws.com",
+    "port": 5432
+  }'
+
+# Update description
+aws secretsmanager update-secret \
+  --secret-id my-secret \
+  --description "Updated description"
+
+# Change KMS key
+aws secretsmanager update-secret \
+  --secret-id my-secret \
+  --kms-key-id alias/new-key
+```
+
+### Put Secret Value (New Version)
+
+```bash
+# Create new version
+aws secretsmanager put-secret-value \
+  --secret-id my-secret \
+  --secret-string "new-version-value"
+
+# With version stages
+aws secretsmanager put-secret-value \
+  --secret-id my-secret \
+  --secret-string "pending-value" \
+  --version-stages AWSPENDING
+
+# With client request token (idempotency)
+aws secretsmanager put-secret-value \
+  --secret-id my-secret \
+  --secret-string "new-value" \
+  --client-request-token $(uuidgen)
+```
+
+### Describe Secret
+
+```bash
+aws secretsmanager describe-secret --secret-id my-secret
+```
+
+### List Secrets
+
+```bash
+# All secrets
+aws secretsmanager list-secrets
+
+# With filters
+aws secretsmanager list-secrets \
+  --filters Key=name,Values=myapp
+
+# Filter by tag
+aws secretsmanager list-secrets \
+  --filters Key=tag-key,Values=Environment Key=tag-value,Values=prod
+
+# Only names and ARNs
+aws secretsmanager list-secrets \
+  --query 'SecretList[].{Name:Name,ARN:ARN}'
+```
+
+### Delete Secret
+
+```bash
+# Schedule deletion (default 30 days)
+aws secretsmanager delete-secret --secret-id my-secret
+
+# With recovery window (7-30 days)
+aws secretsmanager delete-secret \
+  --secret-id my-secret \
+  --recovery-window-in-days 7
+
+# Force delete immediately (no recovery)
+aws secretsmanager delete-secret \
+  --secret-id my-secret \
+  --force-delete-without-recovery
+```
+
+### Restore Secret
+
+```bash
+aws secretsmanager restore-secret --secret-id my-secret
+```
+
+## Secret Rotation
+
+### Configure Rotation
+
+```bash
+aws secretsmanager rotate-secret \
+  --secret-id my-secret \
+  --rotation-lambda-arn arn:aws:lambda:us-east-1:123456789012:function:rotation \
+  --rotation-rules AutomaticallyAfterDays=30
+```
+
+### Rotate Immediately
+
+```bash
+aws secretsmanager rotate-secret --secret-id my-secret
+```
+
+### Cancel Rotation
+
+```bash
+aws secretsmanager cancel-rotate-secret --secret-id my-secret
+```
+
+## Version Management
+
+### List Secret Versions
+
+```bash
+aws secretsmanager list-secret-version-ids --secret-id my-secret
+```
+
+### Update Version Stage
+
+```bash
+aws secretsmanager update-secret-version-stage \
+  --secret-id my-secret \
+  --version-stage AWSCURRENT \
+  --move-to-version-id new-version-id \
+  --remove-from-version-id old-version-id
+```
+
+## Resource Policies
+
+### Put Resource Policy
+
+```bash
+aws secretsmanager put-resource-policy \
+  --secret-id my-secret \
+  --resource-policy '{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::123456789012:role/MyRole"
+        },
+        "Action": "secretsmanager:GetSecretValue",
+        "Resource": "*"
+      }
+    ]
+  }'
+
+# From file
+aws secretsmanager put-resource-policy \
+  --secret-id my-secret \
+  --resource-policy file://policy.json
+
+# Block public access
+aws secretsmanager put-resource-policy \
+  --secret-id my-secret \
+  --block-public-policy \
+  --resource-policy file://policy.json
+```
+
+### Get Resource Policy
+
+```bash
+aws secretsmanager get-resource-policy --secret-id my-secret
+```
+
+### Delete Resource Policy
+
+```bash
+aws secretsmanager delete-resource-policy --secret-id my-secret
+```
+
+### Validate Resource Policy
+
+```bash
+aws secretsmanager validate-resource-policy \
+  --resource-policy file://policy.json
+```
+
+## Multi-Region Replication
+
+### Add Replica Regions
+
+```bash
+aws secretsmanager replicate-secret-to-regions \
+  --secret-id my-secret \
+  --add-replica-regions Region=eu-west-1 Region=ap-northeast-1
+
+# With custom KMS key per region
+aws secretsmanager replicate-secret-to-regions \
+  --secret-id my-secret \
+  --add-replica-regions \
+    Region=eu-west-1,KmsKeyId=alias/my-eu-key \
+    Region=ap-northeast-1,KmsKeyId=alias/my-ap-key
+```
+
+### Remove Replica Regions
+
+```bash
+aws secretsmanager remove-regions-from-replication \
+  --secret-id my-secret \
+  --remove-replica-regions eu-west-1
+```
+
+### Promote Replica to Primary
+
+```bash
+aws secretsmanager stop-replication-to-replica \
+  --secret-id arn:aws:secretsmanager:eu-west-1:123456789012:secret:my-secret
+```
+
+## Tags
+
+```bash
+# Add tags
+aws secretsmanager tag-resource \
+  --secret-id my-secret \
+  --tags Key=Environment,Value=prod Key=Team,Value=backend
+
+# Remove tags
+aws secretsmanager untag-resource \
+  --secret-id my-secret \
+  --tag-keys Environment Team
+```
+
+## Batch Operations
+
+### Get Batch Secret Value
+
+```bash
+aws secretsmanager batch-get-secret-value \
+  --secret-id-list my-secret-1 my-secret-2 my-secret-3
+
+# With filters
+aws secretsmanager batch-get-secret-value \
+  --filters Key=name,Values=myapp
+```
+
+## Common Workflows
+
+### Create and Retrieve Secret
+
+```bash
+# Create
+aws secretsmanager create-secret \
+  --name myapp/api-key \
+  --secret-string "sk-abc123xyz"
+
+# Retrieve in application
+SECRET=$(aws secretsmanager get-secret-value \
+  --secret-id myapp/api-key \
+  --query SecretString \
+  --output text)
+
+echo "API Key: $SECRET"
+```
+
+### Rotate Database Password
+
+```bash
+# 1. Get current credentials
+CURRENT=$(aws secretsmanager get-secret-value \
+  --secret-id myapp/db \
+  --query SecretString \
+  --output text)
+
+# 2. Generate new password
+NEW_PASSWORD=$(openssl rand -base64 32)
+
+# 3. Update database (using psql, mysql, etc.)
+# psql -c "ALTER USER admin PASSWORD '$NEW_PASSWORD'"
+
+# 4. Update secret
+aws secretsmanager update-secret \
+  --secret-id myapp/db \
+  --secret-string "$(echo $CURRENT | jq --arg pw "$NEW_PASSWORD" '.password = $pw')"
+```
+
+### Copy Secret to Another Region
+
+```bash
+SOURCE_SECRET=$(aws secretsmanager get-secret-value \
+  --secret-id my-secret \
+  --query SecretString \
+  --output text)
+
+aws secretsmanager create-secret \
+  --name my-secret \
+  --secret-string "$SOURCE_SECRET" \
+  --region eu-west-1
+```
+
+### Export All Secrets (for backup)
+
+```bash
+aws secretsmanager list-secrets --query 'SecretList[].Name' --output text | \
+tr '\t' '\n' | \
+while read secret; do
+  echo "Backing up: $secret"
+  aws secretsmanager get-secret-value \
+    --secret-id "$secret" \
+    --query '{Name:Name,Value:SecretString}' > "backup-$secret.json"
+done
+```
+
+### Find Secrets by Tag
+
+```bash
+aws secretsmanager list-secrets \
+  --filters Key=tag-key,Values=Application Key=tag-value,Values=myapp \
+  --query 'SecretList[].Name' \
+  --output table
+```

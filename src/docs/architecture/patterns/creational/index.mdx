@@ -1,0 +1,90 @@
+---
+title: Creational Patterns
+description: Patterns that deal with object creation mechanisms
+icon: Plus
+---
+
+# Creational Patterns
+
+Creational design patterns abstract the instantiation process. They help make a system independent of how its objects are created, composed, and represented.
+
+```mermaid
+mindmap
+  root((Creational Patterns))
+    Factory Method
+      Creates objects without specifying exact class
+      Delegates instantiation to subclasses
+    Abstract Factory
+      Creates families of related objects
+      Ensures compatibility between products
+    Builder
+      Constructs complex objects step by step
+      Separates construction from representation
+    Prototype
+      Clones existing objects
+      Avoids expensive creation
+    Singleton
+      Ensures single instance
+      Global access point
+```
+
+## The Patterns
+
+<Cards>
+  <Card
+    title="Factory Method"
+    description="Define an interface for creating objects, but let subclasses decide which class to instantiate"
+    href="/docs/architecture/patterns/creational/factory-method"
+  />
+  <Card
+    title="Abstract Factory"
+    description="Create families of related objects without specifying their concrete classes"
+    href="/docs/architecture/patterns/creational/abstract-factory"
+  />
+  <Card
+    title="Builder"
+    description="Construct complex objects step by step, allowing different representations"
+    href="/docs/architecture/patterns/creational/builder"
+  />
+  <Card
+    title="Prototype"
+    description="Create new objects by copying existing ones without depending on their classes"
+    href="/docs/architecture/patterns/creational/prototype"
+  />
+  <Card
+    title="Singleton"
+    description="Ensure a class has only one instance with a global access point"
+    href="/docs/architecture/patterns/creational/singleton"
+  />
+</Cards>
+
+## Quick Comparison
+
+| Pattern | Intent | Complexity | Frequency |
+|---------|--------|------------|-----------|
+| Factory Method | Defer instantiation to subclasses | ⭐⭐ | Very Common |
+| Abstract Factory | Create families of objects | ⭐⭐⭐ | Common |
+| Builder | Build complex objects step by step | ⭐⭐ | Common |
+| Prototype | Clone objects | ⭐ | Less Common |
+| Singleton | Single instance | ⭐ | Very Common |
+
+## When to Use Which?
+
+```mermaid
+flowchart TD
+    A[Need to create objects?] --> B{How complex<br/>is the object?}
+    
+    B -->|Simple| C{Need flexibility<br/>in type?}
+    B -->|Complex with<br/>many parts| D[Builder]
+    B -->|Expensive to create| E[Prototype]
+    
+    C -->|Yes, one type| F[Factory Method]
+    C -->|Yes, families| G[Abstract Factory]
+    C -->|No, just one instance| H[Singleton]
+    
+    style D fill:#4CAF50
+    style E fill:#2196F3
+    style F fill:#FF9800
+    style G fill:#9C27B0
+    style H fill:#F44336
+```

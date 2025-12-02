@@ -1,0 +1,6 @@
+{
+	"title": "CodeBuild",
+	"description": "Build and Test Code",
+	"icon": "Hammer",
+	"pages": ["index", "cli"]
+}

@@ -1,0 +1,525 @@
+---
+title: AWS CodePipeline
+description: Automate release pipelines for fast and reliable updates
+---
+
+AWS CodePipeline is a fully managed continuous delivery service that helps you automate your release pipelines for fast and reliable application and infrastructure updates.
+
+## Key Concepts
+
+| Concept | Description |
+|---------|-------------|
+| **Pipeline** | Workflow that describes how changes flow |
+| **Stage** | Logical unit containing actions |
+| **Action** | Task performed on artifacts |
+| **Artifact** | Files passed between stages |
+| **Transition** | Link between stages |
+
+## Pipeline Structure
+
+```
+Pipeline
+├── Source Stage
+│   └── GitHub/CodeCommit Action
+├── Build Stage
+│   └── CodeBuild Action
+├── Test Stage
+│   └── CodeBuild Action
+└── Deploy Stage
+    └── ECS/Lambda/S3 Action
+```
+
+## Action Types
+
+### Source Actions
+
+| Provider | Description |
+|----------|-------------|
+| CodeCommit | AWS Git repository |
+| GitHub | GitHub v2 connection |
+| S3 | Artifact from S3 bucket |
+| ECR | Container image |
+| Bitbucket | Bitbucket repository |
+
+### Build Actions
+
+| Provider | Description |
+|----------|-------------|
+| CodeBuild | AWS build service |
+| Jenkins | Self-hosted Jenkins |
+| Custom | Third-party builders |
+
+### Deploy Actions
+
+| Provider | Description |
+|----------|-------------|
+| CloudFormation | Infrastructure deployment |
+| ECS | Container deployment |
+| Lambda | Serverless deployment |
+| S3 | Static file deployment |
+| Elastic Beanstalk | Application deployment |
+| CodeDeploy | EC2/on-premises deployment |
+
+### Approval Actions
+
+| Provider | Description |
+|----------|-------------|
+| Manual Approval | Human approval gate |
+| Lambda Invoke | Programmatic approval |
+
+## Pipeline Definition
+
+### Basic Pipeline
+
+```json
+{
+  "pipeline": {
+    "name": "my-pipeline",
+    "roleArn": "arn:aws:iam::123456789012:role/CodePipelineRole",
+    "stages": [
+      {
+        "name": "Source",
+        "actions": [
+          {
+            "name": "SourceAction",
+            "actionTypeId": {
+              "category": "Source",
+              "owner": "AWS",
+              "provider": "CodeStarSourceConnection",
+              "version": "1"
+            },
+            "configuration": {
+              "ConnectionArn": "arn:aws:codestar-connections:...",
+              "FullRepositoryId": "user/repo",
+              "BranchName": "main"
+            },
+            "outputArtifacts": [{"name": "SourceOutput"}]
+          }
+        ]
+      },
+      {
+        "name": "Build",
+        "actions": [
+          {
+            "name": "BuildAction",
+            "actionTypeId": {
+              "category": "Build",
+              "owner": "AWS",
+              "provider": "CodeBuild",
+              "version": "1"
+            },
+            "configuration": {
+              "ProjectName": "my-build-project"
+            },
+            "inputArtifacts": [{"name": "SourceOutput"}],
+            "outputArtifacts": [{"name": "BuildOutput"}]
+          }
+        ]
+      },
+      {
+        "name": "Deploy",
+        "actions": [
+          {
+            "name": "DeployAction",
+            "actionTypeId": {
+              "category": "Deploy",
+              "owner": "AWS",
+              "provider": "ECS",
+              "version": "1"
+            },
+            "configuration": {
+              "ClusterName": "my-cluster",
+              "ServiceName": "my-service"
+            },
+            "inputArtifacts": [{"name": "BuildOutput"}]
+          }
+        ]
+      }
+    ],
+    "artifactStore": {
+      "type": "S3",
+      "location": "my-pipeline-artifacts"
+    }
+  }
+}
+```
+
+## Source Configurations
+
+### GitHub v2 (Recommended)
+
+```json
+{
+  "actionTypeId": {
+    "category": "Source",
+    "owner": "AWS",
+    "provider": "CodeStarSourceConnection",
+    "version": "1"
+  },
+  "configuration": {
+    "ConnectionArn": "arn:aws:codestar-connections:us-east-1:123456789012:connection/abc123",
+    "FullRepositoryId": "user/repo",
+    "BranchName": "main",
+    "OutputArtifactFormat": "CODE_ZIP",
+    "DetectChanges": "true"
+  }
+}
+```
+
+### CodeCommit
+
+```json
+{
+  "actionTypeId": {
+    "category": "Source",
+    "owner": "AWS",
+    "provider": "CodeCommit",
+    "version": "1"
+  },
+  "configuration": {
+    "RepositoryName": "my-repo",
+    "BranchName": "main",
+    "PollForSourceChanges": "false"
+  }
+}
+```
+
+### S3
+
+```json
+{
+  "actionTypeId": {
+    "category": "Source",
+    "owner": "AWS",
+    "provider": "S3",
+    "version": "1"
+  },
+  "configuration": {
+    "S3Bucket": "my-source-bucket",
+    "S3ObjectKey": "source.zip",
+    "PollForSourceChanges": "false"
+  }
+}
+```
+
+### ECR
+
+```json
+{
+  "actionTypeId": {
+    "category": "Source",
+    "owner": "AWS",
+    "provider": "ECR",
+    "version": "1"
+  },
+  "configuration": {
+    "RepositoryName": "my-app",
+    "ImageTag": "latest"
+  }
+}
+```
+
+## Deploy Configurations
+
+### ECS
+
+```json
+{
+  "actionTypeId": {
+    "category": "Deploy",
+    "owner": "AWS",
+    "provider": "ECS",
+    "version": "1"
+  },
+  "configuration": {
+    "ClusterName": "my-cluster",
+    "ServiceName": "my-service",
+    "FileName": "imagedefinitions.json"
+  }
+}
+```
+
+**imagedefinitions.json:**
+```json
+[
+  {
+    "name": "app",
+    "imageUri": "123456789012.dkr.ecr.us-east-1.amazonaws.com/my-app:v1.0.0"
+  }
+]
+```
+
+### CloudFormation
+
+```json
+{
+  "actionTypeId": {
+    "category": "Deploy",
+    "owner": "AWS",
+    "provider": "CloudFormation",
+    "version": "1"
+  },
+  "configuration": {
+    "ActionMode": "CREATE_UPDATE",
+    "StackName": "my-stack",
+    "TemplatePath": "BuildOutput::template.yaml",
+    "TemplateConfiguration": "BuildOutput::config.json",
+    "Capabilities": "CAPABILITY_IAM",
+    "RoleArn": "arn:aws:iam::123456789012:role/CloudFormationRole"
+  }
+}
+```
+
+### Lambda
+
+```json
+{
+  "actionTypeId": {
+    "category": "Deploy",
+    "owner": "AWS",
+    "provider": "Lambda",
+    "version": "1"
+  },
+  "configuration": {
+    "FunctionName": "my-function",
+    "S3Bucket": "my-artifacts",
+    "S3Key": "function.zip"
+  }
+}
+```
+
+### S3
+
+```json
+{
+  "actionTypeId": {
+    "category": "Deploy",
+    "owner": "AWS",
+    "provider": "S3",
+    "version": "1"
+  },
+  "configuration": {
+    "BucketName": "my-website-bucket",
+    "Extract": "true",
+    "CacheControl": "max-age=31536000",
+    "CannedACL": "public-read"
+  }
+}
+```
+
+## Manual Approval
+
+```json
+{
+  "name": "Approval",
+  "actions": [
+    {
+      "name": "ManualApproval",
+      "actionTypeId": {
+        "category": "Approval",
+        "owner": "AWS",
+        "provider": "Manual",
+        "version": "1"
+      },
+      "configuration": {
+        "NotificationArn": "arn:aws:sns:us-east-1:123456789012:approvals",
+        "CustomData": "Please review the deployment",
+        "ExternalEntityLink": "https://example.com/review"
+      }
+    }
+  ]
+}
+```
+
+## Parallel Actions
+
+Run multiple actions simultaneously:
+
+```json
+{
+  "name": "Test",
+  "actions": [
+    {
+      "name": "UnitTests",
+      "runOrder": 1,
+      "actionTypeId": {
+        "category": "Test",
+        "owner": "AWS",
+        "provider": "CodeBuild",
+        "version": "1"
+      },
+      "configuration": {
+        "ProjectName": "unit-tests"
+      }
+    },
+    {
+      "name": "IntegrationTests",
+      "runOrder": 1,
+      "actionTypeId": {
+        "category": "Test",
+        "owner": "AWS",
+        "provider": "CodeBuild",
+        "version": "1"
+      },
+      "configuration": {
+        "ProjectName": "integration-tests"
+      }
+    },
+    {
+      "name": "SecurityScan",
+      "runOrder": 1,
+      "actionTypeId": {
+        "category": "Test",
+        "owner": "AWS",
+        "provider": "CodeBuild",
+        "version": "1"
+      },
+      "configuration": {
+        "ProjectName": "security-scan"
+      }
+    }
+  ]
+}
+```
+
+## Variables
+
+### Pipeline Variables
+
+```json
+{
+  "pipeline": {
+    "variables": [
+      {
+        "name": "ENVIRONMENT",
+        "defaultValue": "dev"
+      }
+    ]
+  }
+}
+```
+
+### Action Output Variables
+
+Reference outputs from other actions:
+
+```json
+{
+  "configuration": {
+    "EnvironmentVariables": "[{\"name\":\"COMMIT_ID\",\"value\":\"#{SourceVariables.CommitId}\",\"type\":\"PLAINTEXT\"}]"
+  }
+}
+```
+
+### Built-in Variables
+
+| Variable | Description |
+|----------|-------------|
+| `#{codepipeline.PipelineExecutionId}` | Execution ID |
+| `#{SourceVariables.CommitId}` | Git commit SHA |
+| `#{SourceVariables.CommitMessage}` | Commit message |
+| `#{SourceVariables.BranchName}` | Branch name |
+
+## Cross-Account Deployment
+
+### Artifact Store
+
+```json
+{
+  "artifactStores": {
+    "us-east-1": {
+      "type": "S3",
+      "location": "pipeline-artifacts-us-east-1",
+      "encryptionKey": {
+        "type": "KMS",
+        "id": "arn:aws:kms:us-east-1:123456789012:key/abc123"
+      }
+    },
+    "us-west-2": {
+      "type": "S3",
+      "location": "pipeline-artifacts-us-west-2",
+      "encryptionKey": {
+        "type": "KMS",
+        "id": "arn:aws:kms:us-west-2:123456789012:key/def456"
+      }
+    }
+  }
+}
+```
+
+### Cross-Account Role
+
+```json
+{
+  "configuration": {
+    "RoleArn": "arn:aws:iam::987654321098:role/CrossAccountDeployRole"
+  },
+  "roleArn": "arn:aws:iam::987654321098:role/CrossAccountAssumeRole",
+  "region": "us-east-1"
+}
+```
+
+## Event Triggers
+
+### EventBridge Rule
+
+```json
+{
+  "source": ["aws.codecommit"],
+  "detail-type": ["CodeCommit Repository State Change"],
+  "resources": ["arn:aws:codecommit:us-east-1:123456789012:my-repo"],
+  "detail": {
+    "event": ["referenceCreated", "referenceUpdated"],
+    "referenceType": ["branch"],
+    "referenceName": ["main"]
+  }
+}
+```
+
+## Notifications
+
+### SNS Notifications
+
+```bash
+aws codestar-notifications create-notification-rule \
+  --name pipeline-notifications \
+  --resource arn:aws:codepipeline:us-east-1:123456789012:my-pipeline \
+  --detail-type FULL \
+  --event-type-ids \
+    codepipeline-pipeline-pipeline-execution-failed \
+    codepipeline-pipeline-pipeline-execution-succeeded \
+  --targets TargetType=SNS,TargetAddress=arn:aws:sns:us-east-1:123456789012:notifications
+```
+
+## Best Practices
+
+### Pipeline Design
+1. Keep stages focused and simple
+2. Use parallel actions for independent tasks
+3. Implement manual approvals for production
+4. Use separate pipelines per environment
+
+### Security
+1. Use IAM roles with least privilege
+2. Encrypt artifacts with KMS
+3. Use Secrets Manager for credentials
+4. Enable CloudTrail for auditing
+
+### Reliability
+1. Use source polling sparingly
+2. Implement rollback strategies
+3. Add health checks in deployment
+4. Test pipelines in non-production first
+
+### Cost
+1. Use S3 lifecycle policies for artifacts
+2. Clean up old pipeline executions
+3. Optimize CodeBuild compute types
+4. Use event-based triggers
+
+## Next Steps
+
+<Cards>
+  <Card title="CodePipeline CLI Reference" href="/docs/aws/codepipeline/cli" description="Complete CLI commands" />
+  <Card title="CodeDeploy" href="/docs/aws/codedeploy" description="Automated deployments" />
+</Cards>

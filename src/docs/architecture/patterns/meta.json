@@ -1,0 +1,6 @@
+{
+	"title": "Design Patterns",
+	"description": "Gang of Four design patterns",
+	"icon": "Puzzle",
+	"pages": ["index", "creational", "structural", "behavioral"]
+}

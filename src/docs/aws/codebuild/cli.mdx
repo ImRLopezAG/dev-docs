@@ -1,0 +1,480 @@
+---
+title: CodeBuild CLI Reference
+description: AWS CLI commands for CodeBuild
+---
+
+Complete reference for AWS CodeBuild CLI commands with examples.
+
+## Projects
+
+### Create Project
+
+```bash
+aws codebuild create-project \
+  --name my-project \
+  --source '{
+    "type": "GITHUB",
+    "location": "https://github.com/user/repo.git",
+    "buildspec": "buildspec.yml"
+  }' \
+  --artifacts '{
+    "type": "S3",
+    "location": "my-artifacts-bucket",
+    "name": "build-artifacts"
+  }' \
+  --environment '{
+    "type": "LINUX_CONTAINER",
+    "image": "aws/codebuild/standard:7.0",
+    "computeType": "BUILD_GENERAL1_MEDIUM"
+  }' \
+  --service-role arn:aws:iam::123456789012:role/CodeBuildRole
+
+# From file
+aws codebuild create-project --cli-input-json file://project.json
+```
+
+### Update Project
+
+```bash
+aws codebuild update-project \
+  --name my-project \
+  --environment '{
+    "type": "LINUX_CONTAINER",
+    "image": "aws/codebuild/standard:7.0",
+    "computeType": "BUILD_GENERAL1_LARGE"
+  }'
+```
+
+### List Projects
+
+```bash
+aws codebuild list-projects
+
+# With sorting
+aws codebuild list-projects --sort-by NAME --sort-order ASCENDING
+```
+
+### Get Project
+
+```bash
+aws codebuild batch-get-projects --names my-project
+
+# Multiple projects
+aws codebuild batch-get-projects --names project1 project2 project3
+```
+
+### Delete Project
+
+```bash
+aws codebuild delete-project --name my-project
+```
+
+## Builds
+
+### Start Build
+
+```bash
+# Simple
+aws codebuild start-build --project-name my-project
+
+# With source version
+aws codebuild start-build \
+  --project-name my-project \
+  --source-version main
+
+# With environment variable overrides
+aws codebuild start-build \
+  --project-name my-project \
+  --environment-variables-override \
+    name=ENVIRONMENT,value=staging,type=PLAINTEXT \
+    name=DB_PASSWORD,value=/myapp/db-pass,type=PARAMETER_STORE
+
+# With buildspec override
+aws codebuild start-build \
+  --project-name my-project \
+  --buildspec-override file://custom-buildspec.yml
+
+# With compute type override
+aws codebuild start-build \
+  --project-name my-project \
+  --compute-type-override BUILD_GENERAL1_LARGE
+
+# With image override
+aws codebuild start-build \
+  --project-name my-project \
+  --image-override aws/codebuild/standard:7.0
+```
+
+### Start Build Batch
+
+```bash
+aws codebuild start-build-batch \
+  --project-name my-project \
+  --source-version main
+```
+
+### Stop Build
+
+```bash
+aws codebuild stop-build --id codebuild-project:build-id
+```
+
+### Stop Build Batch
+
+```bash
+aws codebuild stop-build-batch --id batch-build-id
+```
+
+### List Builds
+
+```bash
+# All builds
+aws codebuild list-builds
+
+# For specific project
+aws codebuild list-builds-for-project --project-name my-project
+
+# With sorting
+aws codebuild list-builds --sort-order DESCENDING
+```
+
+### Get Build Details
+
+```bash
+aws codebuild batch-get-builds --ids build-id-1 build-id-2
+
+# Get build logs
+aws codebuild batch-get-builds \
+  --ids build-id \
+  --query 'builds[0].logs'
+```
+
+### Retry Build
+
+```bash
+aws codebuild retry-build --id build-id
+```
+
+### Retry Build Batch
+
+```bash
+aws codebuild retry-build-batch --id batch-build-id
+```
+
+## Build Phases
+
+### Get Build Phase Details
+
+```bash
+aws codebuild batch-get-builds \
+  --ids build-id \
+  --query 'builds[0].phases'
+```
+
+## Source Credentials
+
+### Import Source Credentials
+
+```bash
+# GitHub token
+aws codebuild import-source-credentials \
+  --server-type GITHUB \
+  --auth-type PERSONAL_ACCESS_TOKEN \
+  --token ghp_xxxxxxxxxxxx
+
+# Bitbucket
+aws codebuild import-source-credentials \
+  --server-type BITBUCKET \
+  --auth-type BASIC_AUTH \
+  --username my-username \
+  --token app-password
+```
+
+### List Source Credentials
+
+```bash
+aws codebuild list-source-credentials
+```
+
+### Delete Source Credentials
+
+```bash
+aws codebuild delete-source-credentials \
+  --arn arn:aws:codebuild:us-east-1:123456789012:token/github
+```
+
+## Webhooks
+
+### Create Webhook
+
+```bash
+aws codebuild create-webhook \
+  --project-name my-project \
+  --filter-groups '[[
+    {"type": "EVENT", "pattern": "PUSH"},
+    {"type": "HEAD_REF", "pattern": "^refs/heads/main$"}
+  ]]'
+
+# With branch filter
+aws codebuild create-webhook \
+  --project-name my-project \
+  --filter-groups '[[
+    {"type": "EVENT", "pattern": "PUSH, PULL_REQUEST_CREATED, PULL_REQUEST_UPDATED"},
+    {"type": "HEAD_REF", "pattern": "^refs/heads/(main|develop)$"}
+  ]]'
+
+# With file path filter
+aws codebuild create-webhook \
+  --project-name my-project \
+  --filter-groups '[[
+    {"type": "EVENT", "pattern": "PUSH"},
+    {"type": "FILE_PATH", "pattern": "^src/.*"}
+  ]]'
+```
+
+### Update Webhook
+
+```bash
+aws codebuild update-webhook \
+  --project-name my-project \
+  --filter-groups '[[
+    {"type": "EVENT", "pattern": "PUSH"},
+    {"type": "HEAD_REF", "pattern": "^refs/heads/main$"}
+  ]]' \
+  --rotate-secret
+```
+
+### Delete Webhook
+
+```bash
+aws codebuild delete-webhook --project-name my-project
+```
+
+## Reports
+
+### List Reports
+
+```bash
+aws codebuild list-reports
+
+# For project
+aws codebuild list-reports-for-report-group \
+  --report-group-arn arn:aws:codebuild:us-east-1:123456789012:report-group/my-report-group
+```
+
+### Get Report
+
+```bash
+aws codebuild batch-get-reports --report-arns report-arn
+```
+
+### List Report Groups
+
+```bash
+aws codebuild list-report-groups
+```
+
+### Create Report Group
+
+```bash
+aws codebuild create-report-group \
+  --name my-report-group \
+  --type TEST \
+  --export-config '{
+    "exportConfigType": "S3",
+    "s3Destination": {
+      "bucket": "my-reports-bucket",
+      "path": "reports",
+      "packaging": "ZIP"
+    }
+  }'
+```
+
+### Delete Report Group
+
+```bash
+aws codebuild delete-report-group \
+  --arn arn:aws:codebuild:us-east-1:123456789012:report-group/my-report-group
+```
+
+## Environment Images
+
+### List Curated Images
+
+```bash
+aws codebuild list-curated-environment-images
+```
+
+## Compute Fleet
+
+### Create Fleet
+
+```bash
+aws codebuild create-fleet \
+  --name my-fleet \
+  --base-capacity 2 \
+  --environment-type LINUX_CONTAINER \
+  --compute-type BUILD_GENERAL1_MEDIUM
+```
+
+### Update Fleet
+
+```bash
+aws codebuild update-fleet \
+  --arn fleet-arn \
+  --base-capacity 5
+```
+
+### List Fleets
+
+```bash
+aws codebuild list-fleets
+```
+
+### Delete Fleet
+
+```bash
+aws codebuild delete-fleet --arn fleet-arn
+```
+
+## Shared Resources
+
+### Update Project Visibility
+
+```bash
+aws codebuild update-project-visibility \
+  --project-arn arn:aws:codebuild:us-east-1:123456789012:project/my-project \
+  --project-visibility PUBLIC_READ
+```
+
+### List Shared Projects
+
+```bash
+aws codebuild list-shared-projects
+```
+
+### List Shared Report Groups
+
+```bash
+aws codebuild list-shared-report-groups
+```
+
+## Tags
+
+```bash
+# Add tags
+aws codebuild update-project \
+  --name my-project \
+  --tags key=Environment,value=prod key=Team,value=backend
+
+# List tags (via describe)
+aws codebuild batch-get-projects \
+  --names my-project \
+  --query 'projects[0].tags'
+```
+
+## Common Workflows
+
+### Start Build and Wait
+
+```bash
+BUILD_ID=$(aws codebuild start-build \
+  --project-name my-project \
+  --query 'build.id' \
+  --output text)
+
+echo "Build started: $BUILD_ID"
+
+while true; do
+  STATUS=$(aws codebuild batch-get-builds \
+    --ids $BUILD_ID \
+    --query 'builds[0].buildStatus' \
+    --output text)
+  
+  echo "Status: $STATUS"
+  
+  if [ "$STATUS" = "SUCCEEDED" ] || [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "STOPPED" ]; then
+    break
+  fi
+  
+  sleep 30
+done
+
+echo "Build finished with status: $STATUS"
+```
+
+### Get Build Logs
+
+```bash
+BUILD_ID="my-project:build-id"
+
+# Get log location
+LOGS=$(aws codebuild batch-get-builds \
+  --ids $BUILD_ID \
+  --query 'builds[0].logs' \
+  --output json)
+
+LOG_GROUP=$(echo $LOGS | jq -r '.groupName')
+LOG_STREAM=$(echo $LOGS | jq -r '.streamName')
+
+# Fetch logs
+aws logs get-log-events \
+  --log-group-name $LOG_GROUP \
+  --log-stream-name $LOG_STREAM \
+  --query 'events[].message' \
+  --output text
+```
+
+### Trigger Build on Git Push
+
+```bash
+# Create webhook
+aws codebuild create-webhook \
+  --project-name my-project \
+  --filter-groups '[[
+    {"type": "EVENT", "pattern": "PUSH"},
+    {"type": "HEAD_REF", "pattern": "^refs/heads/main$"}
+  ]]'
+
+# Get webhook URL
+aws codebuild batch-get-projects \
+  --names my-project \
+  --query 'projects[0].webhook.url'
+```
+
+### Get Build Metrics
+
+```bash
+# Get build count for last hour
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/CodeBuild \
+  --metric-name Builds \
+  --dimensions Name=ProjectName,Value=my-project \
+  --start-time $(date -u -v-1H +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  --period 3600 \
+  --statistics Sum
+
+# Get average build duration
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/CodeBuild \
+  --metric-name Duration \
+  --dimensions Name=ProjectName,Value=my-project \
+  --start-time $(date -u -v-24H +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  --period 3600 \
+  --statistics Average
+```
+
+### Export Build History
+
+```bash
+aws codebuild list-builds-for-project \
+  --project-name my-project \
+  --query 'ids' \
+  --output text | \
+  tr '\t' '\n' | \
+  xargs -I {} aws codebuild batch-get-builds --ids {} \
+    --query 'builds[0].{id:id,status:buildStatus,start:startTime,end:endTime}' \
+    --output json >> builds.json
+```

@@ -1,0 +1,315 @@
+---
+title: EC2 Security Groups
+description: Virtual firewalls for controlling inbound and outbound traffic
+---
+
+**Security groups** act as virtual firewalls for your EC2 instances, controlling inbound and outbound traffic at the instance level.
+
+<Callout type="info" title="Stateful Firewall">
+Security groups are stateful. If you allow inbound traffic, the response is automatically allowed, regardless of outbound rules.
+</Callout>
+
+## Security Group Basics
+
+### Key Characteristics
+
+| Feature | Behavior |
+|---------|----------|
+| **Default Action** | Deny all inbound, allow all outbound |
+| **Rule Type** | Allow rules only (no deny rules) |
+| **Stateful** | Return traffic automatically allowed |
+| **Scope** | VPC-level, applies to instances |
+| **Changes** | Applied immediately |
+
+### Rule Components
+
+Each rule consists of:
+- **Protocol**: TCP, UDP, ICMP, or All
+- **Port Range**: Single port or range (e.g., 22, 80-443)
+- **Source/Destination**: CIDR block, security group, or prefix list
+- **Description**: Optional but recommended
+
+## Creating Security Groups
+
+```bash title="Create Security Group"
+aws ec2 create-security-group \
+  --group-name web-server-sg \
+  --description "Security group for web servers" \
+  --vpc-id vpc-1234567890abcdef0
+```
+
+Response:
+```json title="Response"
+{
+    "GroupId": "sg-0123456789abcdef0"
+}
+```
+
+## Common Security Group Patterns
+
+<Tabs items={['Web Server', 'Database', 'Bastion Host', 'Application']}>
+<Tab value="Web Server">
+```bash title="Web Server Rules"
+# Allow HTTP from anywhere
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-0123456789abcdef0 \
+  --protocol tcp \
+  --port 80 \
+  --cidr 0.0.0.0/0
+
+# Allow HTTPS from anywhere
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-0123456789abcdef0 \
+  --protocol tcp \
+  --port 443 \
+  --cidr 0.0.0.0/0
+
+# Allow SSH from bastion only
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-0123456789abcdef0 \
+  --protocol tcp \
+  --port 22 \
+  --source-group sg-bastion123
+```
+</Tab>
+<Tab value="Database">
+```bash title="Database Rules"
+# Allow MySQL from application tier only
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-database123 \
+  --protocol tcp \
+  --port 3306 \
+  --source-group sg-application123
+
+# Allow PostgreSQL from application tier only
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-database123 \
+  --protocol tcp \
+  --port 5432 \
+  --source-group sg-application123
+```
+
+<Callout type="warn">
+Never expose database ports to the internet (0.0.0.0/0). Always restrict to specific security groups or IP ranges.
+</Callout>
+</Tab>
+<Tab value="Bastion Host">
+```bash title="Bastion Host Rules"
+# Allow SSH from office IP only
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-bastion123 \
+  --protocol tcp \
+  --port 22 \
+  --cidr 203.0.113.0/24 \
+  --description "Office network"
+
+# Or use SSM Session Manager instead (no inbound rules needed!)
+```
+
+<Callout type="info">
+Consider using AWS Systems Manager Session Manager instead of bastion hosts. It requires no inbound ports and provides audit logging.
+</Callout>
+</Tab>
+<Tab value="Application">
+```bash title="Application Tier Rules"
+# Allow traffic from load balancer
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-application123 \
+  --protocol tcp \
+  --port 8080 \
+  --source-group sg-loadbalancer123
+
+# Allow health checks
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-application123 \
+  --protocol tcp \
+  --port 8081 \
+  --source-group sg-loadbalancer123
+```
+</Tab>
+</Tabs>
+
+## Security Group Referencing
+
+Reference other security groups instead of IP addresses for dynamic environments:
+
+```bash title="Reference Security Group"
+# Allow web tier to access app tier
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-app123 \
+  --protocol tcp \
+  --port 8080 \
+  --source-group sg-web123
+```
+
+Benefits:
+- Works with Auto Scaling (instances added/removed)
+- No need to update IPs
+- Clearer intent in rules
+
+### Cross-Account References
+
+Reference security groups from other VPCs (peered):
+
+```bash title="Cross-VPC Reference"
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-0123456789abcdef0 \
+  --ip-permissions "IpProtocol=tcp,FromPort=443,ToPort=443,UserIdGroupPairs=[{GroupId=sg-peer123,VpcId=vpc-peer456,UserId=987654321098}]"
+```
+
+## Managing Rules
+
+### List Rules
+
+```bash title="Describe Security Group"
+aws ec2 describe-security-groups \
+  --group-ids sg-0123456789abcdef0 \
+  --query 'SecurityGroups[0].{Inbound:IpPermissions,Outbound:IpPermissionsEgress}'
+```
+
+### Remove Rules
+
+```bash title="Remove Rule"
+aws ec2 revoke-security-group-ingress \
+  --group-id sg-0123456789abcdef0 \
+  --protocol tcp \
+  --port 22 \
+  --cidr 0.0.0.0/0
+```
+
+### Update Description
+
+```bash title="Update Rule Description"
+aws ec2 update-security-group-rule-descriptions-ingress \
+  --group-id sg-0123456789abcdef0 \
+  --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=10.0.0.0/8,Description='Corporate network'}]"
+```
+
+## Multiple Security Groups
+
+Instances can have multiple security groups (up to 5 per network interface):
+
+```bash title="Attach Multiple Security Groups"
+aws ec2 run-instances \
+  --instance-type t3.micro \
+  --image-id ami-0123456789abcdef0 \
+  --security-group-ids sg-web123 sg-monitoring123 sg-management123
+```
+
+Rules from all groups are combined:
+- All **allow** rules are aggregated
+- If any group allows traffic, it's allowed
+- Most restrictive **outbound** rules don't override allows
+
+## Outbound Rules
+
+By default, all outbound traffic is allowed. Restrict for better security:
+
+```bash title="Restrict Outbound"
+# Remove default allow-all rule
+aws ec2 revoke-security-group-egress \
+  --group-id sg-0123456789abcdef0 \
+  --protocol all \
+  --cidr 0.0.0.0/0
+
+# Allow only necessary outbound
+aws ec2 authorize-security-group-egress \
+  --group-id sg-0123456789abcdef0 \
+  --protocol tcp \
+  --port 443 \
+  --cidr 0.0.0.0/0
+
+# Allow database access
+aws ec2 authorize-security-group-egress \
+  --group-id sg-0123456789abcdef0 \
+  --protocol tcp \
+  --port 5432 \
+  --source-group sg-database123
+```
+
+## Security Group vs Network ACL
+
+| Feature | Security Group | Network ACL |
+|---------|----------------|-------------|
+| **Level** | Instance | Subnet |
+| **State** | Stateful | Stateless |
+| **Rules** | Allow only | Allow and Deny |
+| **Evaluation** | All rules evaluated | Rules processed in order |
+| **Default** | Deny inbound, allow outbound | Allow all |
+
+<Callout type="info">
+Use security groups as your primary firewall. Use Network ACLs as an additional layer for subnet-level controls.
+</Callout>
+
+## Best Practices
+
+<Steps>
+<Step>
+### Apply Least Privilege
+Only open ports that are necessary. Never use 0.0.0.0/0 for sensitive services.
+</Step>
+<Step>
+### Use Descriptive Names
+Name security groups clearly: `prod-web-server-sg`, `staging-database-sg`
+</Step>
+<Step>
+### Add Rule Descriptions
+Document why each rule exists:
+
+```bash
+--description "Allow HTTPS from CloudFront - JIRA-1234"
+```
+</Step>
+<Step>
+### Reference Security Groups
+Use security group references instead of IP addresses when possible.
+</Step>
+<Step>
+### Regular Audits
+Review security groups periodically:
+
+```bash title="Find Wide-Open Rules"
+aws ec2 describe-security-groups \
+  --query 'SecurityGroups[*].{Name:GroupName,OpenPorts:IpPermissions[?IpRanges[?CidrIp==`0.0.0.0/0`]]}' \
+  --output table
+```
+</Step>
+</Steps>
+
+## Troubleshooting
+
+### Connection Issues
+
+<Tabs items={['Cannot Connect', 'Intermittent Issues', 'One-Way Traffic']}>
+<Tab value="Cannot Connect">
+1. Check inbound rules allow your IP/port
+2. Verify the instance has a public IP (if connecting from internet)
+3. Check Network ACL allows traffic
+4. Verify route table has internet gateway route
+
+```bash title="Check Security Group Rules"
+aws ec2 describe-security-groups \
+  --group-ids sg-0123456789abcdef0 \
+  --query 'SecurityGroups[0].IpPermissions'
+```
+</Tab>
+<Tab value="Intermittent Issues">
+1. Check if source IP changes (dynamic IPs)
+2. Verify no conflicting Network ACL rules
+3. Check if Auto Scaling is replacing instances
+4. Monitor security group changes in CloudTrail
+</Tab>
+<Tab value="One-Way Traffic">
+1. Security groups are stateful, so this is unusual
+2. Check Network ACLs (they're stateless)
+3. Verify both inbound and outbound rules in NACLs
+4. Check application-level firewalls on the instance
+</Tab>
+</Tabs>
+
+## Next Steps
+
+<Cards>
+  <Card title="EC2 EBS Volumes" href="/docs/aws/ec2/ebs" description="Block storage for EC2" />
+  <Card title="VPC" href="/docs/aws/vpc" description="Network configuration" />
+</Cards>

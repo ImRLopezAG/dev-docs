@@ -1,0 +1,393 @@
+---
+title: IAM CLI Reference
+description: AWS CLI commands for Identity and Access Management
+---
+
+Complete reference for AWS IAM CLI commands with examples.
+
+## User Management
+
+### Create User
+
+```bash
+aws iam create-user --user-name developer
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `--user-name` | Name of the user (required) |
+| `--path` | Path for the user name |
+| `--permissions-boundary` | ARN of policy to set as permissions boundary |
+| `--tags` | List of tags to attach |
+
+### List Users
+
+```bash
+# List all users
+aws iam list-users
+
+# List users with specific path prefix
+aws iam list-users --path-prefix /developers/
+
+# Output only user names
+aws iam list-users --query 'Users[*].UserName' --output text
+```
+
+### Delete User
+
+```bash
+aws iam delete-user --user-name developer
+```
+
+<Callout type="warn">
+  Before deleting a user, you must remove all attached policies, access keys, and group memberships.
+</Callout>
+
+### Get User Info
+
+```bash
+# Get current user
+aws iam get-user
+
+# Get specific user
+aws iam get-user --user-name developer
+```
+
+## Group Management
+
+### Create Group
+
+```bash
+aws iam create-group --group-name Developers
+```
+
+### Add User to Group
+
+```bash
+aws iam add-user-to-group --user-name developer --group-name Developers
+```
+
+### Remove User from Group
+
+```bash
+aws iam remove-user-from-group --user-name developer --group-name Developers
+```
+
+### List Groups
+
+```bash
+# List all groups
+aws iam list-groups
+
+# List groups for a user
+aws iam list-groups-for-user --user-name developer
+```
+
+### Delete Group
+
+```bash
+aws iam delete-group --group-name Developers
+```
+
+## Role Management
+
+### Create Role
+
+```bash
+# Create role with trust policy
+aws iam create-role \
+  --role-name EC2S3AccessRole \
+  --assume-role-policy-document file://trust-policy.json
+
+# Example trust-policy.json for EC2
+# {
+#   "Version": "2012-10-17",
+#   "Statement": [
+#     {
+#       "Effect": "Allow",
+#       "Principal": {
+#         "Service": "ec2.amazonaws.com"
+#       },
+#       "Action": "sts:AssumeRole"
+#     }
+#   ]
+# }
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `--role-name` | Name of the role (required) |
+| `--assume-role-policy-document` | Trust policy (required) |
+| `--description` | Description of the role |
+| `--max-session-duration` | Maximum session duration (1-12 hours) |
+| `--permissions-boundary` | ARN of policy for permissions boundary |
+
+### List Roles
+
+```bash
+aws iam list-roles
+
+# Filter by path
+aws iam list-roles --path-prefix /service-role/
+```
+
+### Delete Role
+
+```bash
+aws iam delete-role --role-name EC2S3AccessRole
+```
+
+### Assume Role
+
+```bash
+aws sts assume-role \
+  --role-arn arn:aws:iam::123456789012:role/MyRole \
+  --role-session-name MySession
+```
+
+## Policy Management
+
+### Create Policy
+
+```bash
+aws iam create-policy \
+  --policy-name S3ReadOnlyAccess \
+  --policy-document file://policy.json
+
+# Example policy.json
+# {
+#   "Version": "2012-10-17",
+#   "Statement": [
+#     {
+#       "Effect": "Allow",
+#       "Action": ["s3:GetObject", "s3:ListBucket"],
+#       "Resource": "*"
+#     }
+#   ]
+# }
+```
+
+### List Policies
+
+```bash
+# List all policies
+aws iam list-policies
+
+# List only customer managed policies
+aws iam list-policies --scope Local
+
+# List AWS managed policies
+aws iam list-policies --scope AWS
+```
+
+### Get Policy Details
+
+```bash
+# Get policy metadata
+aws iam get-policy --policy-arn arn:aws:iam::123456789012:policy/MyPolicy
+
+# Get policy document
+aws iam get-policy-version \
+  --policy-arn arn:aws:iam::123456789012:policy/MyPolicy \
+  --version-id v1
+```
+
+### Attach Policy to User
+
+```bash
+aws iam attach-user-policy \
+  --user-name developer \
+  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+```
+
+### Attach Policy to Group
+
+```bash
+aws iam attach-group-policy \
+  --group-name Developers \
+  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+```
+
+### Attach Policy to Role
+
+```bash
+aws iam attach-role-policy \
+  --role-name EC2S3AccessRole \
+  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+```
+
+### Detach Policies
+
+```bash
+# Detach from user
+aws iam detach-user-policy \
+  --user-name developer \
+  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+
+# Detach from role
+aws iam detach-role-policy \
+  --role-name EC2S3AccessRole \
+  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+```
+
+### Delete Policy
+
+```bash
+aws iam delete-policy --policy-arn arn:aws:iam::123456789012:policy/MyPolicy
+```
+
+## Access Keys
+
+### Create Access Key
+
+```bash
+aws iam create-access-key --user-name developer
+```
+
+### List Access Keys
+
+```bash
+aws iam list-access-keys --user-name developer
+```
+
+### Delete Access Key
+
+```bash
+aws iam delete-access-key \
+  --user-name developer \
+  --access-key-id AKIAIOSFODNN7EXAMPLE
+```
+
+### Rotate Access Key
+
+```bash
+# 1. Create new key
+aws iam create-access-key --user-name developer
+
+# 2. Update applications with new key
+
+# 3. Deactivate old key
+aws iam update-access-key \
+  --user-name developer \
+  --access-key-id AKIAIOSFODNN7EXAMPLE \
+  --status Inactive
+
+# 4. Delete old key
+aws iam delete-access-key \
+  --user-name developer \
+  --access-key-id AKIAIOSFODNN7EXAMPLE
+```
+
+## MFA Management
+
+### Enable Virtual MFA
+
+```bash
+# Create virtual MFA device
+aws iam create-virtual-mfa-device \
+  --virtual-mfa-device-name developer-mfa \
+  --outfile QRCode.png \
+  --bootstrap-method QRCodePNG
+
+# Enable MFA for user (requires two consecutive codes)
+aws iam enable-mfa-device \
+  --user-name developer \
+  --serial-number arn:aws:iam::123456789012:mfa/developer-mfa \
+  --authentication-code1 123456 \
+  --authentication-code2 789012
+```
+
+### List MFA Devices
+
+```bash
+aws iam list-mfa-devices --user-name developer
+```
+
+### Deactivate MFA
+
+```bash
+aws iam deactivate-mfa-device \
+  --user-name developer \
+  --serial-number arn:aws:iam::123456789012:mfa/developer-mfa
+```
+
+## Password Management
+
+### Set Password Policy
+
+```bash
+aws iam update-account-password-policy \
+  --minimum-password-length 14 \
+  --require-symbols \
+  --require-numbers \
+  --require-uppercase-characters \
+  --require-lowercase-characters \
+  --allow-users-to-change-password \
+  --max-password-age 90 \
+  --password-reuse-prevention 24
+```
+
+### Create Login Profile
+
+```bash
+aws iam create-login-profile \
+  --user-name developer \
+  --password "TempPassword123!" \
+  --password-reset-required
+```
+
+### Change Password
+
+```bash
+aws iam change-password \
+  --old-password "OldPassword123!" \
+  --new-password "NewPassword456!"
+```
+
+## Instance Profiles
+
+### Create Instance Profile
+
+```bash
+aws iam create-instance-profile --instance-profile-name EC2S3AccessProfile
+```
+
+### Add Role to Instance Profile
+
+```bash
+aws iam add-role-to-instance-profile \
+  --instance-profile-name EC2S3AccessProfile \
+  --role-name EC2S3AccessRole
+```
+
+### List Instance Profiles
+
+```bash
+aws iam list-instance-profiles
+```
+
+## Account Information
+
+### Get Account Summary
+
+```bash
+aws iam get-account-summary
+```
+
+### Generate Credential Report
+
+```bash
+# Generate report
+aws iam generate-credential-report
+
+# Download report
+aws iam get-credential-report --query 'Content' --output text | base64 -d
+```
+
+### Get Account Authorization Details
+
+```bash
+aws iam get-account-authorization-details
+```

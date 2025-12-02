@@ -1,0 +1,13 @@
+{
+	"title": "Creational Patterns",
+	"description": "Patterns that deal with object creation mechanisms",
+	"icon": "Plus",
+	"pages": [
+		"index",
+		"factory-method",
+		"abstract-factory",
+		"builder",
+		"prototype",
+		"singleton"
+	]
+}

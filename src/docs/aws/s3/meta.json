@@ -1,0 +1,14 @@
+{
+	"title": "S3",
+	"description": "Simple Storage Service",
+	"icon": "HardDrive",
+	"pages": [
+		"index",
+		"buckets",
+		"storage-classes",
+		"versioning",
+		"security",
+		"lifecycle",
+		"cli"
+	]
+}

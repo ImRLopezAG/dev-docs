@@ -1,0 +1,18 @@
+{
+	"title": "Behavioral Patterns",
+	"icon": "Cog",
+	"pages": [
+		"index",
+		"chain-of-responsibility",
+		"command",
+		"interpreter",
+		"iterator",
+		"mediator",
+		"memento",
+		"observer",
+		"state",
+		"strategy",
+		"template-method",
+		"visitor"
+	]
+}

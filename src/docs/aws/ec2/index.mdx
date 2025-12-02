@@ -1,0 +1,223 @@
+---
+title: AWS EC2
+description: Elastic Compute Cloud - Virtual servers in the cloud
+---
+
+Amazon Elastic Compute Cloud (EC2) provides scalable computing capacity in the AWS cloud.
+
+<Callout type="info" title="Instance Selection">
+Choose the right instance type for your workload. You can change instance types later, but some changes require stopping the instance.
+</Callout>
+
+## Key Concepts
+
+### Instance Types
+
+EC2 offers various instance types optimized for different use cases:
+
+<Tabs items={['General Purpose', 'Compute/Memory', 'GPU/Storage']}>
+<Tab value="General Purpose">
+| Family | Use Case | Examples |
+|--------|----------|----------|
+| **t** | Burstable workloads | t3.micro, t3.medium |
+| **m** | Balanced compute/memory | m5.large, m6i.xlarge |
+
+Best for: Web servers, development environments, small databases
+</Tab>
+<Tab value="Compute/Memory">
+| Family | Use Case | Examples |
+|--------|----------|----------|
+| **c** | Compute optimized | c5.large, c6i.xlarge |
+| **r** | Memory optimized | r5.large, r6i.xlarge |
+
+Best for: Batch processing, gaming servers, in-memory caching
+</Tab>
+<Tab value="GPU/Storage">
+| Family | Use Case | Examples |
+|--------|----------|----------|
+| **p/g** | GPU instances | p3.2xlarge, g4dn.xlarge |
+| **i/d** | Storage optimized | i3.large, d2.xlarge |
+
+Best for: Machine learning, video encoding, data warehousing
+</Tab>
+</Tabs>
+
+### AMIs (Amazon Machine Images)
+
+Pre-configured templates containing the OS and applications:
+
+- **Amazon Linux 2023**: AWS-optimized Linux distribution
+- **Ubuntu**: Popular open-source Linux
+- **Windows Server**: Microsoft Windows OS
+- **Custom AMIs**: Your own preconfigured images
+
+<Callout type="info">
+Amazon Linux 2023 is recommended for most workloads as it's optimized for AWS and includes long-term support.
+</Callout>
+
+### Security Groups
+
+Virtual firewalls controlling inbound/outbound traffic:
+
+```json title="security-group-rules.json"
+{
+  "IpPermissions": [
+    {
+      "IpProtocol": "tcp",
+      "FromPort": 22,
+      "ToPort": 22,
+      "IpRanges": [{"CidrIp": "10.0.0.0/8"}]
+    },
+    {
+      "IpProtocol": "tcp",
+      "FromPort": 443,
+      "ToPort": 443,
+      "IpRanges": [{"CidrIp": "0.0.0.0/0"}]
+    }
+  ]
+}
+```
+
+<Callout type="warn" title="Security Best Practice">
+Never allow SSH (port 22) from 0.0.0.0/0. Use Systems Manager Session Manager or restrict to specific IPs.
+</Callout>
+
+### Key Pairs
+
+SSH key pairs for secure access:
+
+```bash title="Create Key Pair"
+aws ec2 create-key-pair --key-name my-key --query 'KeyMaterial' --output text > my-key.pem
+chmod 400 my-key.pem
+```
+
+## Instance Lifecycle
+
+```text title="Instance States"
+Pending → Running → Stopping → Stopped → Terminated
+              ↓
+         Rebooting
+```
+
+| State | Description |
+|-------|-------------|
+| pending | Instance is launching |
+| running | Instance is running and ready |
+| stopping | Instance is stopping |
+| stopped | Instance is stopped (no compute charges) |
+| terminated | Instance is permanently deleted |
+
+<Callout type="info">
+Stopped instances don't incur compute charges but you still pay for attached EBS volumes.
+</Callout>
+
+## Pricing Models
+
+<Tabs items={['On-Demand', 'Reserved', 'Spot', 'Savings Plans']}>
+<Tab value="On-Demand">
+Pay by the second with no commitments.
+
+**Best for:**
+- Unpredictable workloads
+- Short-term projects
+- Development and testing
+</Tab>
+<Tab value="Reserved">
+Up to 72% savings with 1 or 3-year commitment.
+
+**Options:**
+- Standard Reserved: Fixed instance type
+- Convertible Reserved: Can change instance types
+- Scheduled Reserved: Specific time windows
+</Tab>
+<Tab value="Spot">
+Up to 90% savings for fault-tolerant workloads.
+
+<Callout type="warn">
+Spot instances can be interrupted with 2 minutes notice. Use for fault-tolerant, stateless workloads.
+</Callout>
+</Tab>
+<Tab value="Savings Plans">
+Flexible pricing with commitment to usage ($/hour).
+
+**Types:**
+- Compute Savings Plans: Any region, family, OS
+- EC2 Instance Savings Plans: Specific region/family
+</Tab>
+</Tabs>
+
+## Storage Options
+
+### EBS (Elastic Block Store)
+
+Persistent block storage volumes:
+
+| Type | Use Case | IOPS | Throughput |
+|------|----------|------|------------|
+| gp3 | General purpose SSD | 3,000-16,000 | 125-1,000 MB/s |
+| io2 | High performance | Up to 64,000 | 1,000 MB/s |
+| st1 | Throughput HDD | 500 | 500 MB/s |
+| sc1 | Cold HDD | 250 | 250 MB/s |
+
+<Callout type="info">
+gp3 is recommended for most workloads. You can provision IOPS and throughput independently.
+</Callout>
+
+### Instance Store
+
+Temporary storage attached to the host:
+- High I/O performance (NVMe SSD)
+- Data lost when instance stops
+- Good for caches, buffers, and temporary data
+
+## Best Practices
+
+<Steps>
+<Step>
+### Security
+1. Use security groups as the first line of defense
+2. Keep instances in private subnets when possible
+3. Use Systems Manager Session Manager instead of SSH
+4. Enable detailed monitoring for production workloads
+5. Always use IAM roles instead of storing credentials
+</Step>
+<Step>
+### Cost Optimization
+1. Right-size instances based on actual usage
+2. Use Reserved Instances for steady-state workloads
+3. Use Spot Instances for fault-tolerant workloads
+4. Stop instances when not in use
+5. Use AWS Compute Optimizer for recommendations
+</Step>
+<Step>
+### High Availability
+1. Distribute instances across multiple AZs
+2. Use Auto Scaling for automatic scaling
+3. Use Elastic Load Balancing for traffic distribution
+4. Implement health checks and auto-recovery
+</Step>
+</Steps>
+
+## User Data
+
+Run scripts on instance launch:
+
+```bash title="user-data.sh"
+#!/bin/bash
+yum update -y
+yum install -y httpd
+systemctl start httpd
+systemctl enable httpd
+echo "Hello World" > /var/www/html/index.html
+```
+
+<Callout type="info">
+User data scripts run as root. Logs are available at `/var/log/cloud-init-output.log`.
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="EC2 CLI Reference" href="/docs/aws/ec2/cli" description="Complete CLI commands for EC2" />
+  <Card title="S3" href="/docs/aws/s3" description="Object storage service" />
+</Cards>

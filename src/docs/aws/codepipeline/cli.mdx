@@ -1,0 +1,434 @@
+---
+title: CodePipeline CLI Reference
+description: AWS CLI commands for CodePipeline
+---
+
+Complete reference for AWS CodePipeline CLI commands with examples.
+
+## Pipelines
+
+### Create Pipeline
+
+```bash
+aws codepipeline create-pipeline \
+  --cli-input-json file://pipeline.json
+```
+
+### Get Pipeline
+
+```bash
+aws codepipeline get-pipeline --name my-pipeline
+
+# Get pipeline state
+aws codepipeline get-pipeline-state --name my-pipeline
+```
+
+### List Pipelines
+
+```bash
+aws codepipeline list-pipelines
+
+# With pagination
+aws codepipeline list-pipelines --max-results 10
+```
+
+### Update Pipeline
+
+```bash
+aws codepipeline update-pipeline \
+  --cli-input-json file://pipeline.json
+```
+
+### Delete Pipeline
+
+```bash
+aws codepipeline delete-pipeline --name my-pipeline
+```
+
+## Pipeline Execution
+
+### Start Execution
+
+```bash
+# Start pipeline
+aws codepipeline start-pipeline-execution \
+  --name my-pipeline
+
+# With source revision
+aws codepipeline start-pipeline-execution \
+  --name my-pipeline \
+  --source-revisions \
+    actionName=Source,revisionType=COMMIT_ID,revisionValue=abc123
+
+# With variables
+aws codepipeline start-pipeline-execution \
+  --name my-pipeline \
+  --variables name=ENVIRONMENT,value=staging
+```
+
+### Stop Execution
+
+```bash
+aws codepipeline stop-pipeline-execution \
+  --pipeline-name my-pipeline \
+  --pipeline-execution-id execution-id \
+  --reason "Manual stop"
+
+# Abandon (don't wait for actions to complete)
+aws codepipeline stop-pipeline-execution \
+  --pipeline-name my-pipeline \
+  --pipeline-execution-id execution-id \
+  --abandon
+```
+
+### Retry Stage
+
+```bash
+aws codepipeline retry-stage-execution \
+  --pipeline-name my-pipeline \
+  --stage-name Deploy \
+  --pipeline-execution-id execution-id \
+  --retry-mode FAILED_ACTIONS
+```
+
+### List Executions
+
+```bash
+aws codepipeline list-pipeline-executions \
+  --pipeline-name my-pipeline
+
+# Filter by status
+aws codepipeline list-pipeline-executions \
+  --pipeline-name my-pipeline \
+  --filter pipelineExecutionStatus=Failed
+```
+
+### Get Execution
+
+```bash
+aws codepipeline get-pipeline-execution \
+  --pipeline-name my-pipeline \
+  --pipeline-execution-id execution-id
+```
+
+## Stage and Action
+
+### Disable Stage Transition
+
+```bash
+aws codepipeline disable-stage-transition \
+  --pipeline-name my-pipeline \
+  --stage-name Deploy \
+  --transition-type Inbound \
+  --reason "Maintenance window"
+```
+
+### Enable Stage Transition
+
+```bash
+aws codepipeline enable-stage-transition \
+  --pipeline-name my-pipeline \
+  --stage-name Deploy \
+  --transition-type Inbound
+```
+
+### List Action Types
+
+```bash
+aws codepipeline list-action-types
+
+# Filter by owner
+aws codepipeline list-action-types --action-owner-filter AWS
+
+# Filter by category
+aws codepipeline list-action-types \
+  --action-owner-filter AWS \
+  --query "actionTypes[?actionType.category=='Deploy']"
+```
+
+### Get Action Executions
+
+```bash
+aws codepipeline list-action-executions \
+  --pipeline-name my-pipeline
+
+# Filter by execution
+aws codepipeline list-action-executions \
+  --pipeline-name my-pipeline \
+  --filter pipelineExecutionId=execution-id
+```
+
+## Approvals
+
+### Put Approval Result
+
+```bash
+# Approve
+aws codepipeline put-approval-result \
+  --pipeline-name my-pipeline \
+  --stage-name Approval \
+  --action-name ManualApproval \
+  --token approval-token \
+  --result summary="Approved by admin",status=Approved
+
+# Reject
+aws codepipeline put-approval-result \
+  --pipeline-name my-pipeline \
+  --stage-name Approval \
+  --action-name ManualApproval \
+  --token approval-token \
+  --result summary="Rejected due to security concerns",status=Rejected
+```
+
+### Get Pending Approval
+
+```bash
+# Get action execution with token
+aws codepipeline list-action-executions \
+  --pipeline-name my-pipeline \
+  --filter pipelineExecutionId=execution-id \
+  --query "actionExecutionDetails[?stageName=='Approval'].output.executionResult.externalExecutionUrl"
+```
+
+## Webhooks
+
+### Create Webhook
+
+```bash
+aws codepipeline put-webhook \
+  --cli-input-json '{
+    "webhook": {
+      "name": "my-webhook",
+      "targetPipeline": "my-pipeline",
+      "targetAction": "Source",
+      "filters": [
+        {
+          "jsonPath": "$.ref",
+          "matchEquals": "refs/heads/main"
+        }
+      ],
+      "authentication": "GITHUB_HMAC",
+      "authenticationConfiguration": {
+        "SecretToken": "my-secret-token"
+      }
+    }
+  }'
+```
+
+### Register Webhook
+
+```bash
+aws codepipeline register-webhook-with-third-party \
+  --webhook-name my-webhook
+```
+
+### List Webhooks
+
+```bash
+aws codepipeline list-webhooks
+```
+
+### Delete Webhook
+
+```bash
+aws codepipeline deregister-webhook-with-third-party \
+  --webhook-name my-webhook
+
+aws codepipeline delete-webhook --name my-webhook
+```
+
+## Artifacts
+
+### Get Artifact Store
+
+```bash
+aws codepipeline get-pipeline \
+  --name my-pipeline \
+  --query 'pipeline.artifactStore'
+```
+
+### Put Job Success/Failure
+
+```bash
+# Success
+aws codepipeline put-job-success-result \
+  --job-id job-id \
+  --execution-details summary="Completed successfully",percentComplete=100
+
+# Failure
+aws codepipeline put-job-failure-result \
+  --job-id job-id \
+  --failure-details type=JobFailed,message="Build failed"
+```
+
+### Acknowledge Job
+
+```bash
+aws codepipeline acknowledge-job \
+  --job-id job-id \
+  --nonce nonce-value
+```
+
+### Poll for Jobs
+
+```bash
+aws codepipeline poll-for-jobs \
+  --action-type-id category=Build,owner=Custom,provider=MyBuilder,version=1
+```
+
+## Tags
+
+```bash
+# Add tags
+aws codepipeline tag-resource \
+  --resource-arn arn:aws:codepipeline:us-east-1:123456789012:my-pipeline \
+  --tags key=Environment,value=prod
+
+# List tags
+aws codepipeline list-tags-for-resource \
+  --resource-arn arn:aws:codepipeline:us-east-1:123456789012:my-pipeline
+
+# Remove tags
+aws codepipeline untag-resource \
+  --resource-arn arn:aws:codepipeline:us-east-1:123456789012:my-pipeline \
+  --tag-keys Environment
+```
+
+## Common Workflows
+
+### Create Simple Pipeline
+
+```bash
+cat > pipeline.json << 'EOF'
+{
+  "pipeline": {
+    "name": "my-app-pipeline",
+    "roleArn": "arn:aws:iam::123456789012:role/CodePipelineRole",
+    "artifactStore": {
+      "type": "S3",
+      "location": "my-pipeline-artifacts"
+    },
+    "stages": [
+      {
+        "name": "Source",
+        "actions": [
+          {
+            "name": "Source",
+            "actionTypeId": {
+              "category": "Source",
+              "owner": "AWS",
+              "provider": "CodeStarSourceConnection",
+              "version": "1"
+            },
+            "configuration": {
+              "ConnectionArn": "arn:aws:codestar-connections:us-east-1:123456789012:connection/abc123",
+              "FullRepositoryId": "user/repo",
+              "BranchName": "main"
+            },
+            "outputArtifacts": [{"name": "SourceOutput"}]
+          }
+        ]
+      },
+      {
+        "name": "Build",
+        "actions": [
+          {
+            "name": "Build",
+            "actionTypeId": {
+              "category": "Build",
+              "owner": "AWS",
+              "provider": "CodeBuild",
+              "version": "1"
+            },
+            "configuration": {
+              "ProjectName": "my-build-project"
+            },
+            "inputArtifacts": [{"name": "SourceOutput"}],
+            "outputArtifacts": [{"name": "BuildOutput"}]
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+
+aws codepipeline create-pipeline --cli-input-json file://pipeline.json
+```
+
+### Monitor Pipeline Execution
+
+```bash
+#!/bin/bash
+PIPELINE="my-pipeline"
+EXECUTION_ID=$(aws codepipeline start-pipeline-execution \
+  --name $PIPELINE \
+  --query 'pipelineExecutionId' \
+  --output text)
+
+echo "Started execution: $EXECUTION_ID"
+
+while true; do
+  STATUS=$(aws codepipeline get-pipeline-execution \
+    --pipeline-name $PIPELINE \
+    --pipeline-execution-id $EXECUTION_ID \
+    --query 'pipelineExecution.status' \
+    --output text)
+  
+  echo "Status: $STATUS"
+  
+  if [ "$STATUS" = "Succeeded" ] || [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Stopped" ]; then
+    break
+  fi
+  
+  sleep 30
+done
+
+echo "Pipeline finished with status: $STATUS"
+```
+
+### Get Failed Action Details
+
+```bash
+PIPELINE="my-pipeline"
+EXECUTION_ID="execution-id"
+
+aws codepipeline list-action-executions \
+  --pipeline-name $PIPELINE \
+  --filter pipelineExecutionId=$EXECUTION_ID \
+  --query "actionExecutionDetails[?status=='Failed'].{Stage:stageName,Action:actionName,Error:output.executionResult.errorDetails}"
+```
+
+### Export Pipeline Definition
+
+```bash
+aws codepipeline get-pipeline \
+  --name my-pipeline \
+  --query 'pipeline' > pipeline-export.json
+```
+
+### Clone Pipeline
+
+```bash
+# Export source pipeline
+aws codepipeline get-pipeline --name source-pipeline --query 'pipeline' > temp.json
+
+# Update name and create new pipeline
+jq '.name = "cloned-pipeline"' temp.json > cloned-pipeline.json
+aws codepipeline create-pipeline --cli-input-json file://cloned-pipeline.json
+```
+
+### List All Pending Approvals
+
+```bash
+for pipeline in $(aws codepipeline list-pipelines --query 'pipelines[].name' --output text); do
+  EXECUTION=$(aws codepipeline get-pipeline-state \
+    --name $pipeline \
+    --query 'stageStates[?actionStates[?latestExecution.status==`InProgress` && actionTypeId.category==`Approval`]].stageName' \
+    --output text)
+  
+  if [ -n "$EXECUTION" ]; then
+    echo "Pipeline: $pipeline, Stage: $EXECUTION"
+  fi
+done
+```

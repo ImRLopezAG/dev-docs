@@ -1,0 +1,422 @@
+---
+title: AWS ECR
+description: Fully managed Docker container registry
+---
+
+Amazon Elastic Container Registry (ECR) is a fully managed Docker container registry for storing, managing, and deploying container images.
+
+## Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Private Registries** | Secure storage for container images |
+| **Public Registries** | Share images publicly |
+| **Vulnerability Scanning** | Detect security issues |
+| **Lifecycle Policies** | Automated image cleanup |
+| **Replication** | Cross-region and cross-account |
+| **Immutable Tags** | Prevent tag overwrites |
+
+## Repository Types
+
+| Type | Access | Use Case |
+|------|--------|----------|
+| **Private** | AWS account only | Production images |
+| **Public** | Anyone | Open source projects |
+
+## Registry URL Format
+
+```
+{aws_account_id}.dkr.ecr.{region}.amazonaws.com/{repository_name}:{tag}
+```
+
+Example:
+```
+123456789012.dkr.ecr.us-east-1.amazonaws.com/my-app:v1.0.0
+```
+
+## Getting Started
+
+### Create Repository
+
+```bash
+aws ecr create-repository \
+  --repository-name my-app \
+  --image-scanning-configuration scanOnPush=true \
+  --image-tag-mutability IMMUTABLE
+```
+
+### Authenticate Docker
+
+```bash
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin \
+  123456789012.dkr.ecr.us-east-1.amazonaws.com
+```
+
+### Push Image
+
+```bash
+# Build image
+docker build -t my-app:latest .
+
+# Tag for ECR
+docker tag my-app:latest \
+  123456789012.dkr.ecr.us-east-1.amazonaws.com/my-app:latest
+
+# Push
+docker push 123456789012.dkr.ecr.us-east-1.amazonaws.com/my-app:latest
+```
+
+### Pull Image
+
+```bash
+docker pull 123456789012.dkr.ecr.us-east-1.amazonaws.com/my-app:latest
+```
+
+## Image Tags
+
+### Tagging Strategy
+
+| Strategy | Example | Use Case |
+|----------|---------|----------|
+| Semantic versioning | `v1.2.3` | Releases |
+| Git SHA | `abc1234` | CI/CD |
+| Build number | `build-123` | Automation |
+| Environment | `prod`, `staging` | Deployment |
+| Date | `2024-01-15` | Daily builds |
+
+### Tag Multiple
+
+```bash
+docker tag my-app:latest \
+  123456789012.dkr.ecr.us-east-1.amazonaws.com/my-app:v1.0.0
+
+docker tag my-app:latest \
+  123456789012.dkr.ecr.us-east-1.amazonaws.com/my-app:$(git rev-parse --short HEAD)
+
+docker push 123456789012.dkr.ecr.us-east-1.amazonaws.com/my-app --all-tags
+```
+
+## Image Scanning
+
+### Types of Scanning
+
+| Type | Description |
+|------|-------------|
+| **Basic** | CVE database scan |
+| **Enhanced** | Amazon Inspector integration |
+
+### Enable Scanning
+
+```bash
+# On push
+aws ecr create-repository \
+  --repository-name my-app \
+  --image-scanning-configuration scanOnPush=true
+
+# Manual scan
+aws ecr start-image-scan \
+  --repository-name my-app \
+  --image-id imageTag=latest
+```
+
+### Get Scan Results
+
+```bash
+aws ecr describe-image-scan-findings \
+  --repository-name my-app \
+  --image-id imageTag=latest
+```
+
+### Enhanced Scanning
+
+```bash
+# Enable for registry
+aws ecr put-registry-scanning-configuration \
+  --scan-type ENHANCED \
+  --rules '[
+    {
+      "scanFrequency": "CONTINUOUS_SCAN",
+      "repositoryFilters": [{"filter": "*", "filterType": "WILDCARD"}]
+    }
+  ]'
+```
+
+## Lifecycle Policies
+
+Automatically clean up old images:
+
+### Policy Examples
+
+```json
+{
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "Keep last 10 images",
+      "selection": {
+        "tagStatus": "any",
+        "countType": "imageCountMoreThan",
+        "countNumber": 10
+      },
+      "action": {
+        "type": "expire"
+      }
+    }
+  ]
+}
+```
+
+### Delete Untagged Images
+
+```json
+{
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "Delete untagged images older than 1 day",
+      "selection": {
+        "tagStatus": "untagged",
+        "countType": "sinceImagePushed",
+        "countUnit": "days",
+        "countNumber": 1
+      },
+      "action": { "type": "expire" }
+    }
+  ]
+}
+```
+
+### Keep Production Tags
+
+```json
+{
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "Keep production images forever",
+      "selection": {
+        "tagStatus": "tagged",
+        "tagPrefixList": ["prod", "release"],
+        "countType": "imageCountMoreThan",
+        "countNumber": 9999
+      },
+      "action": { "type": "expire" }
+    },
+    {
+      "rulePriority": 2,
+      "description": "Delete dev images older than 7 days",
+      "selection": {
+        "tagStatus": "tagged",
+        "tagPrefixList": ["dev", "feature"],
+        "countType": "sinceImagePushed",
+        "countUnit": "days",
+        "countNumber": 7
+      },
+      "action": { "type": "expire" }
+    }
+  ]
+}
+```
+
+### Apply Policy
+
+```bash
+aws ecr put-lifecycle-policy \
+  --repository-name my-app \
+  --lifecycle-policy-text file://lifecycle-policy.json
+```
+
+## Replication
+
+### Cross-Region Replication
+
+```bash
+aws ecr put-replication-configuration \
+  --replication-configuration '{
+    "rules": [
+      {
+        "destinations": [
+          {"region": "eu-west-1", "registryId": "123456789012"},
+          {"region": "ap-northeast-1", "registryId": "123456789012"}
+        ],
+        "repositoryFilters": [
+          {"filter": "prod", "filterType": "PREFIX_MATCH"}
+        ]
+      }
+    ]
+  }'
+```
+
+### Cross-Account Replication
+
+```bash
+aws ecr put-replication-configuration \
+  --replication-configuration '{
+    "rules": [
+      {
+        "destinations": [
+          {"region": "us-east-1", "registryId": "987654321098"}
+        ]
+      }
+    ]
+  }'
+```
+
+## Access Control
+
+### Repository Policy
+
+Allow cross-account pull:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowPull",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::987654321098:root"
+      },
+      "Action": [
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage",
+        "ecr:BatchCheckLayerAvailability"
+      ]
+    }
+  ]
+}
+```
+
+Apply policy:
+
+```bash
+aws ecr set-repository-policy \
+  --repository-name my-app \
+  --policy-text file://policy.json
+```
+
+### Allow Lambda Access
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "LambdaECRImageRetrievalPolicy",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Action": [
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage"
+      ],
+      "Condition": {
+        "StringLike": {
+          "aws:sourceArn": "arn:aws:lambda:us-east-1:123456789012:function:*"
+        }
+      }
+    }
+  ]
+}
+```
+
+## Pull Through Cache
+
+Cache public registries in your private ECR:
+
+```bash
+# Create cache rule
+aws ecr create-pull-through-cache-rule \
+  --ecr-repository-prefix docker-hub \
+  --upstream-registry-url registry-1.docker.io
+
+# Pull via cache
+docker pull 123456789012.dkr.ecr.us-east-1.amazonaws.com/docker-hub/library/nginx:latest
+```
+
+Supported upstreams:
+- Docker Hub
+- Amazon ECR Public
+- Quay
+- GitHub Container Registry
+
+## Public ECR
+
+### Create Public Repository
+
+```bash
+aws ecr-public create-repository \
+  --repository-name my-public-app \
+  --catalog-data '{
+    "description": "My public application",
+    "operatingSystems": ["Linux"],
+    "architectures": ["x86-64", "ARM 64"]
+  }'
+```
+
+### Authenticate to Public ECR
+
+```bash
+aws ecr-public get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin public.ecr.aws
+```
+
+### Push to Public ECR
+
+```bash
+docker tag my-app:latest public.ecr.aws/a1b2c3d4/my-public-app:latest
+docker push public.ecr.aws/a1b2c3d4/my-public-app:latest
+```
+
+## CI/CD Integration
+
+### GitHub Actions
+
+```yaml
+- name: Login to Amazon ECR
+  uses: aws-actions/amazon-ecr-login@v2
+
+- name: Build and push
+  run: |
+    docker build -t ${{ secrets.ECR_REGISTRY }}/my-app:${{ github.sha }} .
+    docker push ${{ secrets.ECR_REGISTRY }}/my-app:${{ github.sha }}
+```
+
+### Docker Buildx (Multi-arch)
+
+```bash
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  -t 123456789012.dkr.ecr.us-east-1.amazonaws.com/my-app:latest \
+  --push .
+```
+
+## Best Practices
+
+### Security
+1. Enable image scanning on push
+2. Use immutable tags for production
+3. Implement least-privilege repository policies
+4. Regularly review scan findings
+
+### Cost Optimization
+1. Implement lifecycle policies
+2. Delete untagged images promptly
+3. Use pull-through cache for public images
+4. Monitor storage usage
+
+### Operations
+1. Use semantic versioning for tags
+2. Replicate across regions for DR
+3. Tag images with build metadata
+4. Automate image cleanup
+
+## Next Steps
+
+<Cards>
+  <Card title="ECR CLI Reference" href="/docs/aws/ecr/cli" description="Complete CLI commands" />
+  <Card title="CodeBuild" href="/docs/aws/codebuild" description="Build and test code" />
+</Cards>

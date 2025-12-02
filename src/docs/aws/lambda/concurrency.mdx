@@ -1,0 +1,479 @@
+---
+title: Lambda Concurrency
+description: Understanding and configuring Lambda concurrency, scaling, and cold starts
+---
+
+Lambda concurrency controls how many function instances can run simultaneously. Understanding concurrency is essential for building scalable, reliable serverless applications.
+
+## Concurrency Fundamentals
+
+<Callout type="info" title="What is Concurrency?">
+Concurrency is the number of requests your function can handle at the same time. Each concurrent execution requires a separate function instance.
+</Callout>
+
+| Term | Definition |
+|------|------------|
+| **Concurrent Execution** | A function instance actively processing a request |
+| **Account Concurrency Limit** | Total concurrent executions across all functions (default 1,000) |
+| **Reserved Concurrency** | Concurrency dedicated to a specific function |
+| **Provisioned Concurrency** | Pre-initialized execution environments |
+
+## Account-Level Limits
+
+```bash title="Get account concurrency limit"
+aws lambda get-account-settings
+```
+
+```json title="Example output"
+{
+  "AccountLimit": {
+    "TotalCodeSize": 80530636800,
+    "CodeSizeUnzipped": 262144000,
+    "ConcurrentExecutions": 1000,
+    "UnreservedConcurrentExecutions": 900
+  },
+  "AccountUsage": {
+    "TotalCodeSize": 52093696,
+    "FunctionCount": 15
+  }
+}
+```
+
+<Callout type="warn">
+The default account limit is 1,000 concurrent executions. Request an increase through Service Quotas if needed.
+</Callout>
+
+## Reserved Concurrency
+
+Reserve a portion of account concurrency for critical functions:
+
+```bash title="Set reserved concurrency"
+aws lambda put-function-concurrency \
+  --function-name my-critical-function \
+  --reserved-concurrent-executions 100
+```
+
+```bash title="Remove reserved concurrency"
+aws lambda delete-function-concurrency \
+  --function-name my-critical-function
+```
+
+### Benefits of Reserved Concurrency
+
+<Steps>
+<Step>
+### Guaranteed Capacity
+Your function always has capacity available, regardless of what other functions are doing.
+</Step>
+<Step>
+### Rate Limiting
+Prevent a single function from consuming all account concurrency and throttling others.
+</Step>
+<Step>
+### Protection
+Protect downstream resources (databases, APIs) from being overwhelmed.
+</Step>
+</Steps>
+
+### Example: Database Protection
+
+```bash title="Limit database connections"
+# Database has max 100 connections
+# Reserve concurrency to prevent overwhelming it
+aws lambda put-function-concurrency \
+  --function-name db-writer \
+  --reserved-concurrent-executions 50
+```
+
+<Callout type="info">
+Setting reserved concurrency to 0 effectively disables a function—useful for emergency stops.
+</Callout>
+
+## Provisioned Concurrency
+
+Pre-initialize execution environments to eliminate cold starts:
+
+```bash title="Configure provisioned concurrency"
+aws lambda put-provisioned-concurrency-config \
+  --function-name my-function \
+  --qualifier prod \
+  --provisioned-concurrent-executions 50
+```
+
+```bash title="Get provisioned concurrency status"
+aws lambda get-provisioned-concurrency-config \
+  --function-name my-function \
+  --qualifier prod
+```
+
+```bash title="Delete provisioned concurrency"
+aws lambda delete-provisioned-concurrency-config \
+  --function-name my-function \
+  --qualifier prod
+```
+
+### When to Use Provisioned Concurrency
+
+| Use Case | Recommendation |
+|----------|----------------|
+| Latency-sensitive APIs | ✅ Use provisioned |
+| Scheduled tasks | ❌ Not needed |
+| High-volume event processing | Consider based on latency needs |
+| Development/testing | ❌ Not needed |
+
+<Callout type="warn">
+Provisioned concurrency is billed even when not in use. Use it strategically for latency-critical paths.
+</Callout>
+
+## Auto Scaling Provisioned Concurrency
+
+Scale provisioned concurrency based on utilization:
+
+```bash title="Register scalable target"
+aws application-autoscaling register-scalable-target \
+  --service-namespace lambda \
+  --resource-id function:my-function:prod \
+  --scalable-dimension lambda:function:ProvisionedConcurrency \
+  --min-capacity 10 \
+  --max-capacity 100
+```
+
+```bash title="Create scaling policy"
+aws application-autoscaling put-scaling-policy \
+  --service-namespace lambda \
+  --resource-id function:my-function:prod \
+  --scalable-dimension lambda:function:ProvisionedConcurrency \
+  --policy-name utilization-scaling \
+  --policy-type TargetTrackingScaling \
+  --target-tracking-scaling-policy-configuration '{
+    "TargetValue": 70.0,
+    "PredefinedMetricSpecification": {
+      "PredefinedMetricType": "LambdaProvisionedConcurrencyUtilization"
+    },
+    "ScaleInCooldown": 60,
+    "ScaleOutCooldown": 0
+  }'
+```
+
+### Scheduled Scaling
+
+Scale provisioned concurrency based on a schedule:
+
+```bash title="Scheduled scaling action"
+aws application-autoscaling put-scheduled-action \
+  --service-namespace lambda \
+  --resource-id function:my-function:prod \
+  --scalable-dimension lambda:function:ProvisionedConcurrency \
+  --scheduled-action-name peak-hours \
+  --schedule "cron(0 8 * * ? *)" \
+  --scalable-target-action MinCapacity=50,MaxCapacity=200
+```
+
+## Cold Starts
+
+<Callout type="info" title="Understanding Cold Starts">
+A cold start occurs when Lambda creates a new execution environment. This includes downloading your code, creating the container, and initializing the runtime.
+</Callout>
+
+### Cold Start Duration by Runtime
+
+| Runtime | Typical Cold Start |
+|---------|-------------------|
+| Python | 100-200ms |
+| Node.js | 100-200ms |
+| Go | 50-100ms |
+| Java | 500ms-5s |
+| .NET | 200-500ms |
+
+### Factors Affecting Cold Starts
+
+| Factor | Impact |
+|--------|--------|
+| **Package size** | Larger = slower |
+| **VPC configuration** | Adds 1-2 seconds |
+| **Memory allocation** | More memory = faster (more CPU) |
+| **Dependencies** | More = slower initialization |
+| **Runtime** | Interpreted vs compiled |
+
+### Minimizing Cold Starts
+
+<Steps>
+<Step>
+### Optimize Package Size
+Keep deployment packages small. Use layers for dependencies.
+
+```bash title="Check package size"
+ls -lh function.zip
+```
+</Step>
+<Step>
+### Increase Memory
+More memory = more CPU = faster initialization.
+
+```bash title="Increase memory"
+aws lambda update-function-configuration \
+  --function-name my-function \
+  --memory-size 1024
+```
+</Step>
+<Step>
+### Use Provisioned Concurrency
+For latency-critical functions:
+
+```bash title="Add provisioned concurrency"
+aws lambda put-provisioned-concurrency-config \
+  --function-name my-function \
+  --qualifier prod \
+  --provisioned-concurrent-executions 10
+```
+</Step>
+<Step>
+### Initialize Outside Handler
+Move expensive initialization outside the handler:
+
+```javascript title="Optimized initialization"
+// Initialize OUTSIDE handler (runs once per container)
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+const client = new DynamoDBClient({});
+
+// Handler (runs on every invocation)
+export const handler = async (event) => {
+  // Use the pre-initialized client
+  return await client.send(command);
+};
+```
+</Step>
+</Steps>
+
+### SnapStart (Java)
+
+For Java functions, SnapStart dramatically reduces cold starts:
+
+```bash title="Enable SnapStart"
+aws lambda update-function-configuration \
+  --function-name my-java-function \
+  --snap-start ApplyOn=PublishedVersions
+```
+
+<Callout type="info">
+SnapStart creates a snapshot of the initialized execution environment. Cold starts drop from seconds to under 200ms.
+</Callout>
+
+## Throttling
+
+When requests exceed concurrency limits, Lambda throttles:
+
+| Invocation Type | Throttle Behavior |
+|-----------------|-------------------|
+| Synchronous | Returns 429 error |
+| Asynchronous | Retries automatically |
+| Event Source | Varies by source |
+
+### Handling Throttling
+
+<Tabs items={['Synchronous', 'Asynchronous', 'Event Source']}>
+<Tab value="Synchronous">
+```javascript title="Client-side retry"
+import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda";
+
+const invokeWithRetry = async (payload, maxRetries = 3) => {
+  const client = new LambdaClient({});
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await client.send(new InvokeCommand({
+        FunctionName: 'my-function',
+        Payload: JSON.stringify(payload)
+      }));
+    } catch (error) {
+      if (error.name === 'TooManyRequestsException' && attempt < maxRetries - 1) {
+        // Exponential backoff
+        await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 100));
+        continue;
+      }
+      throw error;
+    }
+  }
+};
+```
+</Tab>
+<Tab value="Asynchronous">
+Async invocations automatically retry twice:
+
+```javascript title="Check retry count"
+export const handler = async (event, context) => {
+  const retryCount = context.clientContext?.retryAttempts || 0;
+  
+  if (retryCount > 0) {
+    console.log(`Retry attempt: ${retryCount}`);
+  }
+  
+  // Process event
+};
+```
+
+Configure retry behavior:
+```bash title="Configure async retry"
+aws lambda put-function-event-invoke-config \
+  --function-name my-function \
+  --maximum-retry-attempts 1 \
+  --maximum-event-age-in-seconds 3600
+```
+</Tab>
+<Tab value="Event Source">
+For SQS, configure `ScalingConfig`:
+
+```bash title="SQS concurrency limit"
+aws lambda update-event-source-mapping \
+  --uuid abc123 \
+  --scaling-config MaximumConcurrency=10
+```
+
+For Kinesis/DynamoDB, use `ParallelizationFactor`:
+```bash title="Kinesis parallelization"
+aws lambda update-event-source-mapping \
+  --uuid xyz789 \
+  --parallelization-factor 2
+```
+</Tab>
+</Tabs>
+
+## Burst Concurrency
+
+Lambda can burst to high concurrency for sudden traffic spikes:
+
+| Region | Initial Burst |
+|--------|---------------|
+| US East/West, EU (Ireland) | 3,000 |
+| Other regions | 500-1,000 |
+
+After the initial burst, concurrency can increase by 500 additional instances per minute.
+
+<Callout type="warn">
+Burst limits are shared across all functions in an account. A sudden spike from one function affects others.
+</Callout>
+
+## Concurrency Monitoring
+
+### CloudWatch Metrics
+
+```bash title="Get concurrent executions"
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/Lambda \
+  --metric-name ConcurrentExecutions \
+  --dimensions Name=FunctionName,Value=my-function \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-01T23:59:59Z \
+  --period 300 \
+  --statistics Maximum
+```
+
+Key metrics:
+- **ConcurrentExecutions**: Current concurrent executions
+- **ProvisionedConcurrentExecutions**: Provisioned capacity
+- **ProvisionedConcurrencyUtilization**: Usage percentage
+- **UnreservedConcurrentExecutions**: Non-reserved usage
+- **Throttles**: Number of throttled requests
+
+### Set Up Alarms
+
+```bash title="Throttle alarm"
+aws cloudwatch put-metric-alarm \
+  --alarm-name "LambdaThrottles" \
+  --metric-name Throttles \
+  --namespace AWS/Lambda \
+  --dimensions Name=FunctionName,Value=my-function \
+  --statistic Sum \
+  --period 60 \
+  --threshold 1 \
+  --comparison-operator GreaterThanOrEqualToThreshold \
+  --evaluation-periods 1 \
+  --alarm-actions arn:aws:sns:us-east-1:123456789012:alerts
+```
+
+## Concurrency Patterns
+
+### Pattern 1: Shared Pool
+
+Default behavior—all functions share the account limit:
+
+```text
+Account Limit: 1,000
+├── Function A: up to 1,000 (unreserved)
+├── Function B: up to 1,000 (unreserved)
+└── Function C: up to 1,000 (unreserved)
+```
+
+### Pattern 2: Reserved + Unreserved
+
+Mix reserved and unreserved for critical functions:
+
+```text
+Account Limit: 1,000
+├── Function A: 200 (reserved) → guaranteed
+├── Function B: 100 (reserved) → guaranteed
+└── All others: 700 (unreserved) → shared pool
+```
+
+### Pattern 3: Full Isolation
+
+Reserve concurrency for all functions:
+
+```text
+Account Limit: 1,000
+├── Function A: 200 (reserved)
+├── Function B: 300 (reserved)
+├── Function C: 100 (reserved)
+└── Remaining: 400 (unreserved for new functions)
+```
+
+## Concurrency Calculator
+
+Estimate required concurrency:
+
+```
+Required Concurrency = (Requests/Second) × (Average Duration in Seconds)
+
+Example:
+- 100 requests/second
+- 200ms average duration
+
+Concurrency = 100 × 0.2 = 20 concurrent executions
+```
+
+For spiky workloads, add headroom:
+```
+Recommended = Required × 1.5 (50% buffer)
+```
+
+## Best Practices
+
+<Callout type="info" title="Concurrency Best Practices">
+1. **Reserve for critical functions** - Guarantee capacity for important workloads
+2. **Limit database-connected functions** - Prevent connection pool exhaustion
+3. **Use provisioned concurrency sparingly** - Only for latency-sensitive paths
+4. **Monitor throttles** - Set up alarms for throttling events
+5. **Request limit increases early** - Service Quotas requests take time
+6. **Test at scale** - Validate behavior under expected load
+7. **Use scaling configurations** - Set SQS MaximumConcurrency appropriately
+8. **Implement retries** - Handle throttling gracefully in clients
+</Callout>
+
+## Troubleshooting
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| Constant throttling | Hit account limit | Request limit increase |
+| Intermittent throttling | Burst behavior | Add reserved concurrency |
+| Cold starts on API | No warm instances | Add provisioned concurrency |
+| Database overwhelmed | Too many connections | Reduce function concurrency |
+| Slow scaling | Burst limit hit | Pre-warm with provisioned |
+
+## Next Steps
+
+<Cards>
+  <Card title="Triggers" href="/docs/aws/lambda/triggers" description="Event sources" />
+  <Card title="Layers" href="/docs/aws/lambda/layers" description="Code sharing" />
+  <Card title="Monitoring" href="/docs/aws/lambda/monitoring" description="Observability" />
+  <Card title="Lambda CLI" href="/docs/aws/lambda/cli" description="CLI reference" />
+</Cards>

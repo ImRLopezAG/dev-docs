@@ -1,0 +1,512 @@
+---
+title: S3 Versioning
+description: Complete guide to object versioning, MFA delete, and version management
+---
+
+S3 versioning enables you to keep multiple variants of an object in the same bucket. This protects against accidental deletions and overwrites.
+
+## Understanding Versioning
+
+<Callout type="info" title="Key Concepts">
+- Each object version has a unique Version ID
+- Versioning is enabled at the **bucket level**
+- Once enabled, versioning cannot be disabled—only suspended
+- All versions are stored and billed as separate objects
+</Callout>
+
+## Versioning States
+
+A bucket can be in one of three versioning states:
+
+| State | Description | Behavior |
+|-------|-------------|----------|
+| **Unversioned** | Default state | No version IDs, overwrites replace objects |
+| **Versioning-Enabled** | Versioning active | Each PUT creates new version |
+| **Versioning-Suspended** | Versioning paused | New objects get `null` version ID |
+
+<Callout type="warn">
+You cannot return a bucket to unversioned state after enabling versioning.
+</Callout>
+
+## Enabling Versioning
+
+```bash title="Enable versioning"
+aws s3api put-bucket-versioning \
+  --bucket my-bucket \
+  --versioning-configuration Status=Enabled
+```
+
+```bash title="Check versioning status"
+aws s3api get-bucket-versioning --bucket my-bucket
+```
+
+Output:
+```json
+{
+  "Status": "Enabled",
+  "MFADelete": "Disabled"
+}
+```
+
+## How Versioning Works
+
+<Steps>
+<Step>
+### Initial Upload
+When you upload an object, S3 assigns a unique Version ID:
+
+```bash title="Upload first version"
+aws s3 cp report.pdf s3://my-bucket/
+
+# Object now has Version ID: v1ABC123
+```
+</Step>
+<Step>
+### Subsequent Uploads
+Each upload creates a new version; previous versions are preserved:
+
+```bash title="Upload updated version"
+aws s3 cp report-v2.pdf s3://my-bucket/report.pdf
+
+# Creates new version: v2DEF456
+# Previous version v1ABC123 still exists
+```
+</Step>
+<Step>
+### Accessing Versions
+By default, GET returns the latest version:
+
+```bash title="Get latest version"
+aws s3 cp s3://my-bucket/report.pdf ./
+```
+
+To get a specific version:
+
+```bash title="Get specific version"
+aws s3api get-object \
+  --bucket my-bucket \
+  --key report.pdf \
+  --version-id v1ABC123 \
+  report-old.pdf
+```
+</Step>
+</Steps>
+
+## Listing Object Versions
+
+```bash title="List all versions"
+aws s3api list-object-versions --bucket my-bucket
+```
+
+```json title="Example output"
+{
+  "Versions": [
+    {
+      "Key": "report.pdf",
+      "VersionId": "v2DEF456",
+      "IsLatest": true,
+      "LastModified": "2024-01-15T10:30:00Z",
+      "Size": 2048576
+    },
+    {
+      "Key": "report.pdf",
+      "VersionId": "v1ABC123",
+      "IsLatest": false,
+      "LastModified": "2024-01-10T09:00:00Z",
+      "Size": 1024000
+    }
+  ],
+  "DeleteMarkers": []
+}
+```
+
+<Tabs items={['Filter by Prefix', 'Specific Object', 'With Pagination']}>
+<Tab value="Filter by Prefix">
+```bash title="List versions for prefix"
+aws s3api list-object-versions \
+  --bucket my-bucket \
+  --prefix reports/
+```
+</Tab>
+<Tab value="Specific Object">
+```bash title="List versions of specific object"
+aws s3api list-object-versions \
+  --bucket my-bucket \
+  --prefix report.pdf \
+  --query 'Versions[?Key==`report.pdf`]'
+```
+</Tab>
+<Tab value="With Pagination">
+```bash title="Paginated listing"
+aws s3api list-object-versions \
+  --bucket my-bucket \
+  --max-keys 100 \
+  --key-marker "" \
+  --version-id-marker ""
+```
+</Tab>
+</Tabs>
+
+## Delete Operations with Versioning
+
+<Callout type="error" title="Important">
+Deleting an object in a versioned bucket doesn't remove it permanently—it creates a delete marker.
+</Callout>
+
+### Delete Markers
+
+When you delete an object without specifying a version ID:
+
+```bash title="Simple delete (creates delete marker)"
+aws s3 rm s3://my-bucket/report.pdf
+```
+
+This creates a **delete marker** that becomes the current version. The object appears deleted, but all previous versions still exist.
+
+### Restoring Deleted Objects
+
+<Tabs items={['Remove Delete Marker', 'Copy Old Version']}>
+<Tab value="Remove Delete Marker">
+```bash title="Find and remove delete marker"
+# Find the delete marker
+aws s3api list-object-versions \
+  --bucket my-bucket \
+  --prefix report.pdf \
+  --query 'DeleteMarkers[?IsLatest==`true`].{Key:Key,VersionId:VersionId}'
+
+# Delete the delete marker
+aws s3api delete-object \
+  --bucket my-bucket \
+  --key report.pdf \
+  --version-id "DeleteMarkerVersionId123"
+```
+</Tab>
+<Tab value="Copy Old Version">
+```bash title="Copy previous version to restore"
+aws s3api copy-object \
+  --bucket my-bucket \
+  --key report.pdf \
+  --copy-source "my-bucket/report.pdf?versionId=v1ABC123"
+```
+</Tab>
+</Tabs>
+
+### Permanent Deletion
+
+To permanently delete a specific version:
+
+```bash title="Delete specific version"
+aws s3api delete-object \
+  --bucket my-bucket \
+  --key report.pdf \
+  --version-id v1ABC123
+```
+
+<Callout type="warn">
+Permanently deleting versions cannot be undone. Use MFA Delete for additional protection.
+</Callout>
+
+## MFA Delete
+
+MFA Delete provides an additional layer of security for version deletion.
+
+<Callout type="info" title="MFA Delete Protection">
+When enabled, MFA Delete requires:
+- Multi-factor authentication to permanently delete object versions
+- MFA to change the bucket's versioning state
+</Callout>
+
+### Enable MFA Delete
+
+MFA Delete can only be enabled by the **root account** using the AWS CLI:
+
+```bash title="Enable MFA Delete"
+aws s3api put-bucket-versioning \
+  --bucket my-bucket \
+  --versioning-configuration Status=Enabled,MFADelete=Enabled \
+  --mfa "arn:aws:iam::123456789012:mfa/root-account-mfa-device 123456"
+```
+
+<Callout type="error" title="Root Account Required">
+MFA Delete can only be enabled/disabled by the root account, not by IAM users.
+</Callout>
+
+### Delete with MFA
+
+```bash title="Delete version with MFA"
+aws s3api delete-object \
+  --bucket my-bucket \
+  --key report.pdf \
+  --version-id v1ABC123 \
+  --mfa "arn:aws:iam::123456789012:mfa/root-account-mfa-device 654321"
+```
+
+## Versioning with Lifecycle Rules
+
+Combine versioning with lifecycle rules to manage costs:
+
+<Tabs items={['Expire Old Versions', 'Delete Incomplete Uploads', 'Archive Versions']}>
+<Tab value="Expire Old Versions">
+```json title="Delete noncurrent versions after 90 days"
+{
+  "Rules": [
+    {
+      "ID": "ExpireOldVersions",
+      "Status": "Enabled",
+      "Filter": {},
+      "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 90
+      }
+    }
+  ]
+}
+```
+</Tab>
+<Tab value="Delete Incomplete Uploads">
+```json title="Clean up incomplete uploads"
+{
+  "Rules": [
+    {
+      "ID": "AbortIncompleteUploads",
+      "Status": "Enabled",
+      "Filter": {},
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 7
+      }
+    }
+  ]
+}
+```
+</Tab>
+<Tab value="Archive Versions">
+```json title="Archive noncurrent versions to Glacier"
+{
+  "Rules": [
+    {
+      "ID": "ArchiveOldVersions",
+      "Status": "Enabled",
+      "Filter": {},
+      "NoncurrentVersionTransitions": [
+        {
+          "NoncurrentDays": 30,
+          "StorageClass": "STANDARD_IA"
+        },
+        {
+          "NoncurrentDays": 90,
+          "StorageClass": "GLACIER"
+        }
+      ],
+      "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 365
+      }
+    }
+  ]
+}
+```
+</Tab>
+</Tabs>
+
+```bash title="Apply lifecycle configuration"
+aws s3api put-bucket-lifecycle-configuration \
+  --bucket my-bucket \
+  --lifecycle-configuration file://lifecycle.json
+```
+
+## Keep Only N Versions
+
+Limit the number of noncurrent versions retained:
+
+```json title="Keep last 3 versions"
+{
+  "Rules": [
+    {
+      "ID": "KeepLast3Versions",
+      "Status": "Enabled",
+      "Filter": {},
+      "NoncurrentVersionExpiration": {
+        "NewerNoncurrentVersions": 3,
+        "NoncurrentDays": 1
+      }
+    }
+  ]
+}
+```
+
+<Callout type="info">
+This keeps only the 3 most recent noncurrent versions and deletes older ones after 1 day of becoming noncurrent.
+</Callout>
+
+## Expired Delete Markers
+
+When all versions of an object are deleted (only a delete marker remains), you can automatically clean up:
+
+```json title="Remove expired delete markers"
+{
+  "Rules": [
+    {
+      "ID": "DeleteExpiredMarkers",
+      "Status": "Enabled",
+      "Filter": {},
+      "Expiration": {
+        "ExpiredObjectDeleteMarker": true
+      }
+    }
+  ]
+}
+```
+
+## Suspending Versioning
+
+<Callout type="warn">
+Suspending versioning doesn't delete existing versions—it just stops creating new ones.
+</Callout>
+
+```bash title="Suspend versioning"
+aws s3api put-bucket-versioning \
+  --bucket my-bucket \
+  --versioning-configuration Status=Suspended
+```
+
+When suspended:
+- Existing versions remain intact
+- New object uploads get a `null` Version ID
+- Uploading overwrites objects with `null` Version ID
+
+## Version-Specific Operations
+
+<Tabs items={['Get Metadata', 'Set ACL', 'Add Tags']}>
+<Tab value="Get Metadata">
+```bash title="Get version metadata"
+aws s3api head-object \
+  --bucket my-bucket \
+  --key report.pdf \
+  --version-id v1ABC123
+```
+</Tab>
+<Tab value="Set ACL">
+```bash title="Set ACL on version"
+aws s3api put-object-acl \
+  --bucket my-bucket \
+  --key report.pdf \
+  --version-id v1ABC123 \
+  --acl private
+```
+</Tab>
+<Tab value="Add Tags">
+```bash title="Tag specific version"
+aws s3api put-object-tagging \
+  --bucket my-bucket \
+  --key report.pdf \
+  --version-id v1ABC123 \
+  --tagging 'TagSet=[{Key=Status,Value=Archived}]'
+```
+</Tab>
+</Tabs>
+
+## Presigned URLs for Versions
+
+Generate presigned URLs for specific versions:
+
+```bash title="Presigned URL for version"
+aws s3 presign \
+  s3://my-bucket/report.pdf \
+  --version-id v1ABC123 \
+  --expires-in 3600
+```
+
+## Versioning with Replication
+
+<Callout type="info">
+Cross-region replication (CRR) and same-region replication (SRR) require versioning enabled on both source and destination buckets.
+</Callout>
+
+```json title="Replication with delete marker sync"
+{
+  "Role": "arn:aws:iam::123456789012:role/replication-role",
+  "Rules": [
+    {
+      "ID": "ReplicateAll",
+      "Status": "Enabled",
+      "Priority": 1,
+      "Filter": {},
+      "DeleteMarkerReplication": {
+        "Status": "Enabled"
+      },
+      "Destination": {
+        "Bucket": "arn:aws:s3:::destination-bucket",
+        "ReplicaModifications": {
+          "Status": "Enabled"
+        }
+      }
+    }
+  ]
+}
+```
+
+## Common Use Cases
+
+### Backup and Recovery
+
+```bash title="Script: Backup all versions of critical files"
+#!/bin/bash
+BUCKET="my-bucket"
+BACKUP_BUCKET="my-backup-bucket"
+PREFIX="critical/"
+
+aws s3api list-object-versions --bucket $BUCKET --prefix $PREFIX \
+  --query 'Versions[*].[Key,VersionId]' --output text | \
+  while read KEY VERSION; do
+    aws s3api copy-object \
+      --bucket $BACKUP_BUCKET \
+      --key "${KEY}/${VERSION}" \
+      --copy-source "${BUCKET}/${KEY}?versionId=${VERSION}"
+  done
+```
+
+### Audit Trail
+
+Use versioning combined with Object Lock for compliance:
+
+```bash title="Enable Object Lock (new buckets only)"
+aws s3api create-bucket \
+  --bucket my-compliance-bucket \
+  --object-lock-enabled-for-bucket \
+  --region us-east-1
+```
+
+## Cost Considerations
+
+<Callout type="warn" title="Storage Costs">
+Each version is a complete copy and is billed separately:
+- 100 versions of a 1GB file = 100GB billed storage
+- Noncurrent versions count toward storage totals
+- Delete markers are not charged
+</Callout>
+
+**Cost optimization strategies:**
+
+1. **Lifecycle rules**: Transition old versions to cheaper storage classes
+2. **Version limits**: Keep only N recent noncurrent versions
+3. **Clean up delete markers**: Remove expired delete markers
+4. **Monitor**: Use S3 Storage Lens to track version storage
+
+## Best Practices
+
+<Callout type="info" title="Versioning Best Practices">
+1. **Enable on important buckets** - Protection against accidental deletion
+2. **Combine with lifecycle rules** - Manage costs by expiring old versions
+3. **Enable MFA Delete** - Protect against malicious deletion
+4. **Monitor storage growth** - Versions add up quickly
+5. **Use for compliance** - Pair with Object Lock for WORM
+6. **Replicate versions** - Enable replication for DR
+7. **Document retention policies** - Know how many versions to keep
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="Lifecycle Rules" href="/docs/aws/s3/lifecycle" description="Automate version management" />
+  <Card title="Security" href="/docs/aws/s3/security" description="Access control and encryption" />
+  <Card title="Storage Classes" href="/docs/aws/s3/storage-classes" description="Optimize storage costs" />
+  <Card title="S3 CLI Reference" href="/docs/aws/s3/cli" description="Complete CLI commands" />
+</Cards>

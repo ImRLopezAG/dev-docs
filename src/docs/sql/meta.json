@@ -1,0 +1,21 @@
+{
+	"title": "SQL for Developers",
+	"description": "Complete SQL guide with query optimization, indexing, and database fundamentals",
+	"icon": "Database",
+	"root": true,
+	"pages": [
+		"index",
+		"---Fundamentals---",
+		"fundamentals",
+		"---Performance---",
+		"query-optimization",
+		"indexing",
+		"---Database Features---",
+		"transactions",
+		"database-design",
+		"---Database Platforms---",
+		"postgresql",
+		"mysql",
+		"mssql"
+	]
+}

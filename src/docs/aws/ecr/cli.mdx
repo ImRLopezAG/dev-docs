@@ -1,0 +1,506 @@
+---
+title: ECR CLI Reference
+description: AWS CLI commands for ECR
+---
+
+Complete reference for AWS ECR CLI commands with examples.
+
+## Authentication
+
+### Get Login Password
+
+```bash
+# Get password and pipe to docker login
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin \
+  123456789012.dkr.ecr.us-east-1.amazonaws.com
+
+# For public ECR
+aws ecr-public get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin public.ecr.aws
+```
+
+## Repositories
+
+### Create Repository
+
+```bash
+# Simple
+aws ecr create-repository --repository-name my-app
+
+# With scanning and immutable tags
+aws ecr create-repository \
+  --repository-name my-app \
+  --image-scanning-configuration scanOnPush=true \
+  --image-tag-mutability IMMUTABLE
+
+# With encryption
+aws ecr create-repository \
+  --repository-name my-app \
+  --encryption-configuration encryptionType=KMS,kmsKey=alias/my-key
+
+# With tags
+aws ecr create-repository \
+  --repository-name my-app \
+  --tags Key=Environment,Value=prod
+```
+
+### List Repositories
+
+```bash
+aws ecr describe-repositories
+
+# Filter by name
+aws ecr describe-repositories \
+  --repository-names my-app another-app
+
+# Get names only
+aws ecr describe-repositories \
+  --query 'repositories[].repositoryName' \
+  --output text
+```
+
+### Get Repository URI
+
+```bash
+aws ecr describe-repositories \
+  --repository-names my-app \
+  --query 'repositories[0].repositoryUri' \
+  --output text
+```
+
+### Delete Repository
+
+```bash
+# Empty repository
+aws ecr delete-repository --repository-name my-app
+
+# Force delete (with images)
+aws ecr delete-repository \
+  --repository-name my-app \
+  --force
+```
+
+## Images
+
+### List Images
+
+```bash
+# All images
+aws ecr list-images --repository-name my-app
+
+# With details
+aws ecr describe-images --repository-name my-app
+
+# Filter by tag
+aws ecr describe-images \
+  --repository-name my-app \
+  --image-ids imageTag=latest
+
+# Sort by push date
+aws ecr describe-images \
+  --repository-name my-app \
+  --query 'sort_by(imageDetails, &imagePushedAt)[*].{Tag:imageTags[0],Size:imageSizeInBytes,Pushed:imagePushedAt}'
+```
+
+### Get Image Details
+
+```bash
+aws ecr describe-images \
+  --repository-name my-app \
+  --image-ids imageTag=v1.0.0
+
+# Get by digest
+aws ecr describe-images \
+  --repository-name my-app \
+  --image-ids imageDigest=sha256:abc123...
+```
+
+### Delete Images
+
+```bash
+# Delete by tag
+aws ecr batch-delete-image \
+  --repository-name my-app \
+  --image-ids imageTag=old-version
+
+# Delete by digest
+aws ecr batch-delete-image \
+  --repository-name my-app \
+  --image-ids imageDigest=sha256:abc123...
+
+# Delete multiple
+aws ecr batch-delete-image \
+  --repository-name my-app \
+  --image-ids imageTag=v1 imageTag=v2 imageTag=v3
+
+# Delete untagged images
+aws ecr describe-images \
+  --repository-name my-app \
+  --filter tagStatus=UNTAGGED \
+  --query 'imageDetails[].imageDigest' \
+  --output text | \
+  tr '\t' '\n' | \
+  xargs -I {} aws ecr batch-delete-image \
+    --repository-name my-app \
+    --image-ids imageDigest={}
+```
+
+### Retag Image
+
+```bash
+# Get manifest
+MANIFEST=$(aws ecr batch-get-image \
+  --repository-name my-app \
+  --image-ids imageTag=v1.0.0 \
+  --query 'images[0].imageManifest' \
+  --output text)
+
+# Put with new tag
+aws ecr put-image \
+  --repository-name my-app \
+  --image-tag v1 \
+  --image-manifest "$MANIFEST"
+```
+
+## Image Scanning
+
+### Start Scan
+
+```bash
+aws ecr start-image-scan \
+  --repository-name my-app \
+  --image-id imageTag=latest
+```
+
+### Get Scan Findings
+
+```bash
+aws ecr describe-image-scan-findings \
+  --repository-name my-app \
+  --image-id imageTag=latest
+
+# Get summary only
+aws ecr describe-image-scan-findings \
+  --repository-name my-app \
+  --image-id imageTag=latest \
+  --query 'imageScanFindings.findingSeverityCounts'
+```
+
+### Wait for Scan
+
+```bash
+aws ecr wait image-scan-complete \
+  --repository-name my-app \
+  --image-id imageTag=latest
+```
+
+### Configure Registry Scanning
+
+```bash
+# Enhanced scanning
+aws ecr put-registry-scanning-configuration \
+  --scan-type ENHANCED \
+  --rules '[
+    {
+      "scanFrequency": "CONTINUOUS_SCAN",
+      "repositoryFilters": [
+        {"filter": "prod-*", "filterType": "WILDCARD"}
+      ]
+    },
+    {
+      "scanFrequency": "SCAN_ON_PUSH",
+      "repositoryFilters": [
+        {"filter": "*", "filterType": "WILDCARD"}
+      ]
+    }
+  ]'
+
+# Get configuration
+aws ecr get-registry-scanning-configuration
+```
+
+## Lifecycle Policies
+
+### Put Lifecycle Policy
+
+```bash
+aws ecr put-lifecycle-policy \
+  --repository-name my-app \
+  --lifecycle-policy-text '{
+    "rules": [
+      {
+        "rulePriority": 1,
+        "description": "Keep last 10 images",
+        "selection": {
+          "tagStatus": "any",
+          "countType": "imageCountMoreThan",
+          "countNumber": 10
+        },
+        "action": {"type": "expire"}
+      }
+    ]
+  }'
+
+# From file
+aws ecr put-lifecycle-policy \
+  --repository-name my-app \
+  --lifecycle-policy-text file://lifecycle-policy.json
+```
+
+### Get Lifecycle Policy
+
+```bash
+aws ecr get-lifecycle-policy --repository-name my-app
+```
+
+### Preview Lifecycle Policy
+
+```bash
+aws ecr get-lifecycle-policy-preview \
+  --repository-name my-app \
+  --lifecycle-policy-text file://lifecycle-policy.json
+```
+
+### Delete Lifecycle Policy
+
+```bash
+aws ecr delete-lifecycle-policy --repository-name my-app
+```
+
+## Repository Policies
+
+### Set Repository Policy
+
+```bash
+aws ecr set-repository-policy \
+  --repository-name my-app \
+  --policy-text '{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "AllowPull",
+        "Effect": "Allow",
+        "Principal": {"AWS": "arn:aws:iam::987654321098:root"},
+        "Action": [
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:BatchCheckLayerAvailability"
+        ]
+      }
+    ]
+  }'
+
+# From file
+aws ecr set-repository-policy \
+  --repository-name my-app \
+  --policy-text file://repo-policy.json
+```
+
+### Get Repository Policy
+
+```bash
+aws ecr get-repository-policy --repository-name my-app
+```
+
+### Delete Repository Policy
+
+```bash
+aws ecr delete-repository-policy --repository-name my-app
+```
+
+## Replication
+
+### Configure Replication
+
+```bash
+aws ecr put-replication-configuration \
+  --replication-configuration '{
+    "rules": [
+      {
+        "destinations": [
+          {"region": "eu-west-1", "registryId": "123456789012"},
+          {"region": "ap-northeast-1", "registryId": "123456789012"}
+        ],
+        "repositoryFilters": [
+          {"filter": "prod-", "filterType": "PREFIX_MATCH"}
+        ]
+      }
+    ]
+  }'
+```
+
+### Get Replication Configuration
+
+```bash
+aws ecr describe-registry
+```
+
+## Pull Through Cache
+
+### Create Rule
+
+```bash
+# Docker Hub
+aws ecr create-pull-through-cache-rule \
+  --ecr-repository-prefix docker-hub \
+  --upstream-registry-url registry-1.docker.io
+
+# ECR Public
+aws ecr create-pull-through-cache-rule \
+  --ecr-repository-prefix ecr-public \
+  --upstream-registry-url public.ecr.aws
+
+# Quay
+aws ecr create-pull-through-cache-rule \
+  --ecr-repository-prefix quay \
+  --upstream-registry-url quay.io
+```
+
+### List Rules
+
+```bash
+aws ecr describe-pull-through-cache-rules
+```
+
+### Delete Rule
+
+```bash
+aws ecr delete-pull-through-cache-rule \
+  --ecr-repository-prefix docker-hub
+```
+
+## Registry Settings
+
+### Get Registry Settings
+
+```bash
+aws ecr describe-registry
+```
+
+### Configure Registry
+
+```bash
+# Set registry policy
+aws ecr put-registry-policy \
+  --policy-text file://registry-policy.json
+
+# Delete registry policy
+aws ecr delete-registry-policy
+```
+
+## Tags
+
+```bash
+# Tag repository
+aws ecr tag-resource \
+  --resource-arn arn:aws:ecr:us-east-1:123456789012:repository/my-app \
+  --tags Key=Environment,Value=prod
+
+# List tags
+aws ecr list-tags-for-resource \
+  --resource-arn arn:aws:ecr:us-east-1:123456789012:repository/my-app
+
+# Untag
+aws ecr untag-resource \
+  --resource-arn arn:aws:ecr:us-east-1:123456789012:repository/my-app \
+  --tag-keys Environment
+```
+
+## Public ECR
+
+### Create Public Repository
+
+```bash
+aws ecr-public create-repository \
+  --repository-name my-public-app \
+  --catalog-data '{
+    "description": "My public application",
+    "operatingSystems": ["Linux"],
+    "architectures": ["x86-64", "ARM 64"],
+    "usageText": "docker pull public.ecr.aws/alias/my-public-app"
+  }'
+```
+
+### List Public Repositories
+
+```bash
+aws ecr-public describe-repositories
+```
+
+### Delete Public Repository
+
+```bash
+aws ecr-public delete-repository \
+  --repository-name my-public-app \
+  --force
+```
+
+## Common Workflows
+
+### Build and Push
+
+```bash
+#!/bin/bash
+REPO=123456789012.dkr.ecr.us-east-1.amazonaws.com/my-app
+TAG=$(git rev-parse --short HEAD)
+
+# Authenticate
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin $REPO
+
+# Build
+docker build -t $REPO:$TAG -t $REPO:latest .
+
+# Push
+docker push $REPO --all-tags
+```
+
+### Cleanup Old Images
+
+```bash
+#!/bin/bash
+REPO=my-app
+KEEP=10
+
+# Get images sorted by date
+IMAGES=$(aws ecr describe-images \
+  --repository-name $REPO \
+  --query "sort_by(imageDetails, &imagePushedAt)[0:-$KEEP].imageDigest" \
+  --output text)
+
+# Delete old images
+for digest in $IMAGES; do
+  echo "Deleting $digest"
+  aws ecr batch-delete-image \
+    --repository-name $REPO \
+    --image-ids imageDigest=$digest
+done
+```
+
+### Copy Image Between Regions
+
+```bash
+SOURCE_REGION=us-east-1
+DEST_REGION=eu-west-1
+REPO=my-app
+TAG=v1.0.0
+
+# Pull from source
+aws ecr get-login-password --region $SOURCE_REGION | \
+  docker login --username AWS --password-stdin \
+  123456789012.dkr.ecr.$SOURCE_REGION.amazonaws.com
+
+docker pull 123456789012.dkr.ecr.$SOURCE_REGION.amazonaws.com/$REPO:$TAG
+
+# Push to destination
+aws ecr get-login-password --region $DEST_REGION | \
+  docker login --username AWS --password-stdin \
+  123456789012.dkr.ecr.$DEST_REGION.amazonaws.com
+
+docker tag \
+  123456789012.dkr.ecr.$SOURCE_REGION.amazonaws.com/$REPO:$TAG \
+  123456789012.dkr.ecr.$DEST_REGION.amazonaws.com/$REPO:$TAG
+
+docker push 123456789012.dkr.ecr.$DEST_REGION.amazonaws.com/$REPO:$TAG
+```

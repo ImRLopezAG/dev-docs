@@ -1,0 +1,483 @@
+---
+title: VPC CLI Reference
+description: AWS CLI commands for Virtual Private Cloud
+---
+
+Complete reference for AWS VPC CLI commands with examples.
+
+## VPC Management
+
+### Create VPC
+
+```bash
+aws ec2 create-vpc --cidr-block 10.0.0.0/16
+
+# With tags
+aws ec2 create-vpc \
+  --cidr-block 10.0.0.0/16 \
+  --tag-specifications 'ResourceType=vpc,Tags=[{Key=Name,Value=my-vpc}]'
+
+# Enable DNS hostnames
+aws ec2 modify-vpc-attribute \
+  --vpc-id vpc-123 \
+  --enable-dns-hostnames
+```
+
+### Describe VPCs
+
+```bash
+aws ec2 describe-vpcs
+
+# Get specific VPC
+aws ec2 describe-vpcs --vpc-ids vpc-123
+
+# Filter by tag
+aws ec2 describe-vpcs --filters "Name=tag:Name,Values=my-vpc"
+```
+
+### Delete VPC
+
+```bash
+aws ec2 delete-vpc --vpc-id vpc-123
+```
+
+## Subnets
+
+### Create Subnet
+
+```bash
+# Public subnet
+aws ec2 create-subnet \
+  --vpc-id vpc-123 \
+  --cidr-block 10.0.1.0/24 \
+  --availability-zone us-east-1a \
+  --tag-specifications 'ResourceType=subnet,Tags=[{Key=Name,Value=public-subnet-1}]'
+
+# Private subnet
+aws ec2 create-subnet \
+  --vpc-id vpc-123 \
+  --cidr-block 10.0.10.0/24 \
+  --availability-zone us-east-1a \
+  --tag-specifications 'ResourceType=subnet,Tags=[{Key=Name,Value=private-subnet-1}]'
+```
+
+### Enable Auto-assign Public IP
+
+```bash
+aws ec2 modify-subnet-attribute \
+  --subnet-id subnet-123 \
+  --map-public-ip-on-launch
+```
+
+### Describe Subnets
+
+```bash
+aws ec2 describe-subnets --filters "Name=vpc-id,Values=vpc-123"
+```
+
+### Delete Subnet
+
+```bash
+aws ec2 delete-subnet --subnet-id subnet-123
+```
+
+## Internet Gateway
+
+### Create Internet Gateway
+
+```bash
+aws ec2 create-internet-gateway \
+  --tag-specifications 'ResourceType=internet-gateway,Tags=[{Key=Name,Value=my-igw}]'
+```
+
+### Attach to VPC
+
+```bash
+aws ec2 attach-internet-gateway \
+  --internet-gateway-id igw-123 \
+  --vpc-id vpc-456
+```
+
+### Detach from VPC
+
+```bash
+aws ec2 detach-internet-gateway \
+  --internet-gateway-id igw-123 \
+  --vpc-id vpc-456
+```
+
+### Delete Internet Gateway
+
+```bash
+aws ec2 delete-internet-gateway --internet-gateway-id igw-123
+```
+
+## NAT Gateway
+
+### Create NAT Gateway
+
+```bash
+# First, allocate Elastic IP
+aws ec2 allocate-address --domain vpc
+
+# Create NAT Gateway
+aws ec2 create-nat-gateway \
+  --subnet-id subnet-public-123 \
+  --allocation-id eipalloc-456 \
+  --tag-specifications 'ResourceType=natgateway,Tags=[{Key=Name,Value=my-nat}]'
+```
+
+### Describe NAT Gateways
+
+```bash
+aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=vpc-123"
+```
+
+### Delete NAT Gateway
+
+```bash
+aws ec2 delete-nat-gateway --nat-gateway-id nat-123
+```
+
+## Route Tables
+
+### Create Route Table
+
+```bash
+aws ec2 create-route-table \
+  --vpc-id vpc-123 \
+  --tag-specifications 'ResourceType=route-table,Tags=[{Key=Name,Value=public-rt}]'
+```
+
+### Add Routes
+
+```bash
+# Route to Internet Gateway
+aws ec2 create-route \
+  --route-table-id rtb-123 \
+  --destination-cidr-block 0.0.0.0/0 \
+  --gateway-id igw-456
+
+# Route to NAT Gateway
+aws ec2 create-route \
+  --route-table-id rtb-789 \
+  --destination-cidr-block 0.0.0.0/0 \
+  --nat-gateway-id nat-abc
+
+# Route to VPC Peering
+aws ec2 create-route \
+  --route-table-id rtb-123 \
+  --destination-cidr-block 10.1.0.0/16 \
+  --vpc-peering-connection-id pcx-def
+```
+
+### Associate with Subnet
+
+```bash
+aws ec2 associate-route-table \
+  --route-table-id rtb-123 \
+  --subnet-id subnet-456
+```
+
+### Replace Route
+
+```bash
+aws ec2 replace-route \
+  --route-table-id rtb-123 \
+  --destination-cidr-block 0.0.0.0/0 \
+  --nat-gateway-id nat-new
+```
+
+### Delete Route
+
+```bash
+aws ec2 delete-route \
+  --route-table-id rtb-123 \
+  --destination-cidr-block 0.0.0.0/0
+```
+
+### Describe Route Tables
+
+```bash
+aws ec2 describe-route-tables --filters "Name=vpc-id,Values=vpc-123"
+```
+
+## Security Groups
+
+### Create Security Group
+
+```bash
+aws ec2 create-security-group \
+  --group-name web-servers \
+  --description "Security group for web servers" \
+  --vpc-id vpc-123
+```
+
+### Add Inbound Rules
+
+```bash
+# Allow HTTP
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-123 \
+  --protocol tcp \
+  --port 80 \
+  --cidr 0.0.0.0/0
+
+# Allow HTTPS
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-123 \
+  --protocol tcp \
+  --port 443 \
+  --cidr 0.0.0.0/0
+
+# Allow SSH from specific IP
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-123 \
+  --protocol tcp \
+  --port 22 \
+  --cidr 10.0.0.0/8
+
+# Allow from another security group
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-123 \
+  --protocol tcp \
+  --port 3306 \
+  --source-group sg-456
+```
+
+### Remove Inbound Rules
+
+```bash
+aws ec2 revoke-security-group-ingress \
+  --group-id sg-123 \
+  --protocol tcp \
+  --port 22 \
+  --cidr 10.0.0.0/8
+```
+
+### Add Outbound Rules
+
+```bash
+aws ec2 authorize-security-group-egress \
+  --group-id sg-123 \
+  --protocol tcp \
+  --port 443 \
+  --cidr 0.0.0.0/0
+```
+
+### Describe Security Groups
+
+```bash
+aws ec2 describe-security-groups --group-ids sg-123
+```
+
+### Delete Security Group
+
+```bash
+aws ec2 delete-security-group --group-id sg-123
+```
+
+## Network ACLs
+
+### Create Network ACL
+
+```bash
+aws ec2 create-network-acl \
+  --vpc-id vpc-123 \
+  --tag-specifications 'ResourceType=network-acl,Tags=[{Key=Name,Value=my-nacl}]'
+```
+
+### Add Inbound Rules
+
+```bash
+# Allow HTTP
+aws ec2 create-network-acl-entry \
+  --network-acl-id acl-123 \
+  --rule-number 100 \
+  --protocol tcp \
+  --rule-action allow \
+  --ingress \
+  --port-range From=80,To=80 \
+  --cidr-block 0.0.0.0/0
+
+# Allow HTTPS
+aws ec2 create-network-acl-entry \
+  --network-acl-id acl-123 \
+  --rule-number 110 \
+  --protocol tcp \
+  --rule-action allow \
+  --ingress \
+  --port-range From=443,To=443 \
+  --cidr-block 0.0.0.0/0
+
+# Allow ephemeral ports (return traffic)
+aws ec2 create-network-acl-entry \
+  --network-acl-id acl-123 \
+  --rule-number 120 \
+  --protocol tcp \
+  --rule-action allow \
+  --ingress \
+  --port-range From=1024,To=65535 \
+  --cidr-block 0.0.0.0/0
+```
+
+### Add Outbound Rules
+
+```bash
+aws ec2 create-network-acl-entry \
+  --network-acl-id acl-123 \
+  --rule-number 100 \
+  --protocol -1 \
+  --rule-action allow \
+  --egress \
+  --cidr-block 0.0.0.0/0
+```
+
+### Associate with Subnet
+
+```bash
+aws ec2 replace-network-acl-association \
+  --association-id aclassoc-123 \
+  --network-acl-id acl-456
+```
+
+## VPC Endpoints
+
+### Create Gateway Endpoint (S3)
+
+```bash
+aws ec2 create-vpc-endpoint \
+  --vpc-id vpc-123 \
+  --service-name com.amazonaws.us-east-1.s3 \
+  --route-table-ids rtb-456 rtb-789
+```
+
+### Create Interface Endpoint
+
+```bash
+aws ec2 create-vpc-endpoint \
+  --vpc-id vpc-123 \
+  --vpc-endpoint-type Interface \
+  --service-name com.amazonaws.us-east-1.secretsmanager \
+  --subnet-ids subnet-123 subnet-456 \
+  --security-group-ids sg-789 \
+  --private-dns-enabled
+```
+
+### Describe VPC Endpoints
+
+```bash
+aws ec2 describe-vpc-endpoints --filters "Name=vpc-id,Values=vpc-123"
+```
+
+### Delete VPC Endpoint
+
+```bash
+aws ec2 delete-vpc-endpoints --vpc-endpoint-ids vpce-123
+```
+
+## VPC Peering
+
+### Create Peering Connection
+
+```bash
+aws ec2 create-vpc-peering-connection \
+  --vpc-id vpc-123 \
+  --peer-vpc-id vpc-456 \
+  --peer-region us-west-2
+```
+
+### Accept Peering Connection
+
+```bash
+aws ec2 accept-vpc-peering-connection \
+  --vpc-peering-connection-id pcx-123
+```
+
+### Describe Peering Connections
+
+```bash
+aws ec2 describe-vpc-peering-connections
+```
+
+### Delete Peering Connection
+
+```bash
+aws ec2 delete-vpc-peering-connection \
+  --vpc-peering-connection-id pcx-123
+```
+
+## Flow Logs
+
+### Create Flow Logs
+
+```bash
+# To CloudWatch Logs
+aws ec2 create-flow-logs \
+  --resource-type VPC \
+  --resource-ids vpc-123 \
+  --traffic-type ALL \
+  --log-destination-type cloud-watch-logs \
+  --log-group-name vpc-flow-logs \
+  --deliver-logs-permission-arn arn:aws:iam::123456789012:role/flow-logs-role
+
+# To S3
+aws ec2 create-flow-logs \
+  --resource-type VPC \
+  --resource-ids vpc-123 \
+  --traffic-type ALL \
+  --log-destination-type s3 \
+  --log-destination arn:aws:s3:::my-flow-logs-bucket
+```
+
+### Describe Flow Logs
+
+```bash
+aws ec2 describe-flow-logs --filter "Name=resource-id,Values=vpc-123"
+```
+
+### Delete Flow Logs
+
+```bash
+aws ec2 delete-flow-logs --flow-log-ids fl-123
+```
+
+## Elastic IPs
+
+### Allocate Elastic IP
+
+```bash
+aws ec2 allocate-address --domain vpc
+```
+
+### Associate with Instance
+
+```bash
+aws ec2 associate-address \
+  --instance-id i-123 \
+  --allocation-id eipalloc-456
+```
+
+### Describe Elastic IPs
+
+```bash
+aws ec2 describe-addresses
+```
+
+### Release Elastic IP
+
+```bash
+aws ec2 release-address --allocation-id eipalloc-123
+```
+
+## Tags
+
+```bash
+aws ec2 create-tags \
+  --resources vpc-123 subnet-456 \
+  --tags Key=Environment,Value=Production
+
+aws ec2 delete-tags \
+  --resources vpc-123 \
+  --tags Key=Environment
+```

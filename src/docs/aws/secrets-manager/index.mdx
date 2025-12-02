@@ -1,0 +1,377 @@
+---
+title: AWS Secrets Manager
+description: Securely store, manage, and rotate secrets like database credentials and API keys
+---
+
+AWS Secrets Manager helps you protect access to your applications, services, and IT resources. Store, rotate, and manage access to secrets without hardcoding them in your code.
+
+## Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Encryption** | Secrets encrypted with KMS |
+| **Rotation** | Automatic secret rotation |
+| **Fine-grained Access** | IAM-based access control |
+| **Versioning** | Track secret versions |
+| **Audit** | CloudTrail logging |
+| **Replication** | Multi-region replication |
+
+## Secret Types
+
+| Type | Use Case |
+|------|----------|
+| Database credentials | RDS, Redshift, DocumentDB |
+| API keys | Third-party services |
+| OAuth tokens | Authentication flows |
+| SSH keys | Server access |
+| Custom secrets | Any key-value data |
+
+## Creating Secrets
+
+### Store a Simple Secret
+
+```bash
+aws secretsmanager create-secret \
+  --name my-secret \
+  --description "My application secret" \
+  --secret-string "my-secret-value"
+```
+
+### Store Key-Value Pairs
+
+```bash
+aws secretsmanager create-secret \
+  --name myapp/db-credentials \
+  --description "Database credentials" \
+  --secret-string '{
+    "username": "admin",
+    "password": "supersecret123",
+    "host": "mydb.abc123.us-east-1.rds.amazonaws.com",
+    "port": 5432,
+    "database": "myapp"
+  }'
+```
+
+### Store Binary Secret
+
+```bash
+aws secretsmanager create-secret \
+  --name my-certificate \
+  --secret-binary fileb://certificate.pem
+```
+
+## Retrieving Secrets
+
+### JavaScript/Node.js
+
+```javascript
+import { SecretsManager } from '@aws-sdk/client-secrets-manager';
+
+const client = new SecretsManager({});
+
+const getSecret = async (secretName) => {
+  const response = await client.getSecretValue({
+    SecretId: secretName
+  });
+  
+  if (response.SecretString) {
+    return JSON.parse(response.SecretString);
+  }
+  
+  // Binary secret
+  return Buffer.from(response.SecretBinary);
+};
+
+// Usage
+const dbCreds = await getSecret('myapp/db-credentials');
+console.log(dbCreds.username, dbCreds.password);
+```
+
+### With Caching (Recommended)
+
+```javascript
+import { SecretsManager } from '@aws-sdk/client-secrets-manager';
+
+const client = new SecretsManager({});
+const cache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+const getCachedSecret = async (secretName) => {
+  const cached = cache.get(secretName);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.value;
+  }
+  
+  const response = await client.getSecretValue({ SecretId: secretName });
+  const value = JSON.parse(response.SecretString);
+  
+  cache.set(secretName, { value, timestamp: Date.now() });
+  return value;
+};
+```
+
+## Secret Rotation
+
+### Enable Automatic Rotation
+
+```bash
+aws secretsmanager rotate-secret \
+  --secret-id myapp/db-credentials \
+  --rotation-lambda-arn arn:aws:lambda:us-east-1:123456789012:function:SecretsRotation \
+  --rotation-rules AutomaticallyAfterDays=30
+```
+
+### Rotation Lambda Function
+
+```javascript
+export const handler = async (event) => {
+  const { SecretId, ClientRequestToken, Step } = event;
+  
+  const client = new SecretsManager({});
+  
+  switch (Step) {
+    case 'createSecret':
+      // Generate new secret value
+      const newPassword = generatePassword();
+      await client.putSecretValue({
+        SecretId,
+        ClientRequestToken,
+        SecretString: JSON.stringify({ password: newPassword }),
+        VersionStages: ['AWSPENDING']
+      });
+      break;
+      
+    case 'setSecret':
+      // Apply new secret to the resource (e.g., update DB password)
+      const pending = await client.getSecretValue({
+        SecretId,
+        VersionStage: 'AWSPENDING'
+      });
+      await updateDatabasePassword(JSON.parse(pending.SecretString).password);
+      break;
+      
+    case 'testSecret':
+      // Verify new secret works
+      const testSecret = await client.getSecretValue({
+        SecretId,
+        VersionStage: 'AWSPENDING'
+      });
+      await testDatabaseConnection(JSON.parse(testSecret.SecretString));
+      break;
+      
+    case 'finishSecret':
+      // Mark AWSPENDING as AWSCURRENT
+      const metadata = await client.describeSecret({ SecretId });
+      const currentVersion = Object.entries(metadata.VersionIdsToStages)
+        .find(([, stages]) => stages.includes('AWSCURRENT'))?.[0];
+        
+      await client.updateSecretVersionStage({
+        SecretId,
+        VersionStage: 'AWSCURRENT',
+        MoveToVersionId: ClientRequestToken,
+        RemoveFromVersionId: currentVersion
+      });
+      break;
+  }
+};
+```
+
+### RDS Integration
+
+Use built-in rotation for RDS:
+
+```bash
+aws secretsmanager rotate-secret \
+  --secret-id myapp/rds-credentials \
+  --rotation-lambda-arn arn:aws:lambda:us-east-1:123456789012:function:SecretsManagerRDSPostgreSQLRotationSingleUser \
+  --rotation-rules AutomaticallyAfterDays=30
+```
+
+## Secret Versioning
+
+| Version Stage | Description |
+|---------------|-------------|
+| `AWSCURRENT` | Current active version |
+| `AWSPENDING` | Being rotated, not yet active |
+| `AWSPREVIOUS` | Previous version (for rollback) |
+
+### Retrieve Specific Version
+
+```bash
+# Current version
+aws secretsmanager get-secret-value \
+  --secret-id my-secret \
+  --version-stage AWSCURRENT
+
+# Previous version
+aws secretsmanager get-secret-value \
+  --secret-id my-secret \
+  --version-stage AWSPREVIOUS
+
+# By version ID
+aws secretsmanager get-secret-value \
+  --secret-id my-secret \
+  --version-id abc123-def456
+```
+
+## Resource Policies
+
+Control access to secrets:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:role/MyAppRole"
+      },
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "secretsmanager:VersionStage": "AWSCURRENT"
+        }
+      }
+    }
+  ]
+}
+```
+
+Apply policy:
+
+```bash
+aws secretsmanager put-resource-policy \
+  --secret-id my-secret \
+  --resource-policy file://policy.json
+```
+
+## Multi-Region Replication
+
+```bash
+aws secretsmanager replicate-secret-to-regions \
+  --secret-id my-secret \
+  --add-replica-regions Region=eu-west-1 Region=ap-northeast-1
+```
+
+Remove replica:
+
+```bash
+aws secretsmanager remove-regions-from-replication \
+  --secret-id my-secret \
+  --remove-replica-regions eu-west-1
+```
+
+## Integration Examples
+
+### Lambda Environment Variable (NOT Recommended)
+
+```yaml
+# Don't do this - secrets in env vars are visible in console
+MyFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    Environment:
+      Variables:
+        SECRET_ARN: !Ref MySecret  # Pass ARN, not value
+```
+
+### Lambda with Secrets Extension
+
+```yaml
+MyFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    Layers:
+      - arn:aws:lambda:us-east-1:177933569100:layer:AWS-Parameters-and-Secrets-Lambda-Extension:4
+    Environment:
+      Variables:
+        SECRETS_MANAGER_ENABLED: true
+        SECRET_NAME: myapp/credentials
+```
+
+### ECS Task Definition
+
+```json
+{
+  "containerDefinitions": [
+    {
+      "name": "app",
+      "secrets": [
+        {
+          "name": "DB_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:123456789012:secret:myapp/db:password::"
+        },
+        {
+          "name": "API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:123456789012:secret:myapp/api-key::"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### CloudFormation Dynamic Reference
+
+```yaml
+Resources:
+  MyDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      MasterUsername: '{{resolve:secretsmanager:MyDBSecret:SecretString:username}}'
+      MasterUserPassword: '{{resolve:secretsmanager:MyDBSecret:SecretString:password}}'
+```
+
+## Cost Optimization
+
+| Pricing Component | Cost |
+|-------------------|------|
+| Per secret/month | $0.40 |
+| Per 10,000 API calls | $0.05 |
+| Replicas | $0.40 per region |
+
+### Tips
+1. Use caching to reduce API calls
+2. Consolidate related secrets into one
+3. Delete unused secrets
+4. Use Parameter Store for non-sensitive config
+
+## Best Practices
+
+### Security
+1. Use resource policies for fine-grained access
+2. Enable automatic rotation
+3. Use separate secrets per environment
+4. Monitor with CloudTrail
+
+### Naming Convention
+```
+{environment}/{application}/{secret-type}
+Example: prod/myapp/database-credentials
+```
+
+### Application Design
+1. Cache secrets in memory
+2. Implement graceful secret refresh
+3. Handle rotation without downtime
+4. Never log secret values
+
+## Secrets Manager vs Parameter Store
+
+| Feature | Secrets Manager | Parameter Store |
+|---------|-----------------|-----------------|
+| Automatic rotation | Yes | No |
+| Cross-region replication | Yes | No |
+| Versioning | Yes | Yes |
+| KMS encryption | Required | Optional |
+| Cost | $0.40/secret/month | Free tier available |
+| Best for | Credentials, keys | Configuration |
+
+## Next Steps
+
+<Cards>
+  <Card title="Secrets Manager CLI Reference" href="/docs/aws/secrets-manager/cli" description="Complete CLI commands" />
+  <Card title="Systems Manager" href="/docs/aws/systems-manager" description="Parameter Store and more" />
+</Cards>

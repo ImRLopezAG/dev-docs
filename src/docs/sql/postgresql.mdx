@@ -1,0 +1,760 @@
+---
+title: PostgreSQL
+description: Comprehensive guide to PostgreSQL including psql CLI, advanced features, extensions, and administration
+---
+
+PostgreSQL is a powerful, open-source object-relational database known for its reliability, feature robustness, and performance. This guide covers PostgreSQL-specific features, CLI commands, and best practices.
+
+## Installation
+
+### macOS
+
+```bash
+# Using Homebrew
+brew install postgresql@16
+
+# Start PostgreSQL service
+brew services start postgresql@16
+
+# Add to PATH
+echo 'export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+### Linux (Ubuntu/Debian)
+
+```bash
+# Add PostgreSQL repository
+sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+
+# Install PostgreSQL
+sudo apt-get update
+sudo apt-get install postgresql-16
+
+# Start service
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+```
+
+### Docker
+
+```bash
+# Run PostgreSQL container
+docker run -d \
+  --name postgres \
+  -e POSTGRES_PASSWORD=mysecretpassword \
+  -e POSTGRES_USER=myuser \
+  -e POSTGRES_DB=mydb \
+  -p 5432:5432 \
+  -v postgres_data:/var/lib/postgresql/data \
+  postgres:16
+
+# Connect to container
+docker exec -it postgres psql -U myuser -d mydb
+```
+
+## psql CLI Reference
+
+### Connection
+
+```bash
+# Basic connection
+psql -h localhost -p 5432 -U username -d database
+
+# Connection with password prompt
+psql -h localhost -U username -d database -W
+
+# Connection string
+psql "postgresql://username:password@localhost:5432/database"
+
+# Connect with SSL
+psql "postgresql://user:pass@host:5432/db?sslmode=require"
+
+# Set default connection via environment variables
+export PGHOST=localhost
+export PGPORT=5432
+export PGUSER=myuser
+export PGDATABASE=mydb
+export PGPASSWORD=mypassword  # Not recommended for security
+psql
+```
+
+### Meta-Commands
+
+```bash
+# Help
+\?                  # List all psql commands
+\h                  # SQL command help
+\h SELECT           # Help for specific command
+
+# Connection info
+\conninfo           # Display connection information
+\c dbname           # Connect to database
+\c dbname user      # Connect as different user
+
+# List objects
+\l                  # List databases
+\l+                 # List databases with size
+\dt                 # List tables
+\dt+                # List tables with size
+\dt schema.*        # List tables in schema
+\di                 # List indexes
+\dv                 # List views
+\dm                 # List materialized views
+\df                 # List functions
+\dn                 # List schemas
+\du                 # List roles/users
+\dp                 # List privileges
+
+# Describe objects
+\d tablename        # Describe table
+\d+ tablename       # Describe table (detailed)
+\d tablename.*      # Show all related objects
+
+# Schema management
+\dn                 # List schemas
+\dn+                # List schemas with permissions
+SET search_path TO myschema, public;
+
+# Settings
+\x                  # Toggle expanded output
+\x auto             # Auto-expand for wide results
+\timing             # Toggle query timing
+\pset format csv    # Set output format (csv, html, aligned)
+\pset border 2      # Set border style
+
+# Output
+\o filename         # Send output to file
+\o                  # Stop sending to file
+\copy               # Copy data to/from file
+\i filename         # Execute SQL from file
+
+# Editing
+\e                  # Edit last query in $EDITOR
+\ef funcname        # Edit function
+\ev viewname        # Edit view
+```
+
+### Useful Queries
+
+```sql
+-- Current database and user
+SELECT current_database(), current_user;
+
+-- Database size
+SELECT pg_size_pretty(pg_database_size(current_database()));
+
+-- Table sizes
+SELECT 
+    relname AS table,
+    pg_size_pretty(pg_total_relation_size(relid)) AS total_size,
+    pg_size_pretty(pg_relation_size(relid)) AS table_size,
+    pg_size_pretty(pg_indexes_size(relid)) AS index_size
+FROM pg_catalog.pg_statio_user_tables
+ORDER BY pg_total_relation_size(relid) DESC;
+
+-- Active connections
+SELECT 
+    pid,
+    usename,
+    application_name,
+    client_addr,
+    state,
+    query
+FROM pg_stat_activity
+WHERE state != 'idle';
+
+-- Running queries
+SELECT 
+    pid,
+    now() - pg_stat_activity.query_start AS duration,
+    query,
+    state
+FROM pg_stat_activity
+WHERE state != 'idle'
+ORDER BY duration DESC;
+
+-- Kill a query
+SELECT pg_cancel_backend(pid);     -- Graceful
+SELECT pg_terminate_backend(pid);  -- Force
+```
+
+## Data Types
+
+### PostgreSQL-Specific Types
+
+```sql
+-- UUID
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT
+);
+
+-- JSONB (binary JSON, indexed)
+CREATE TABLE products (
+    id SERIAL PRIMARY KEY,
+    data JSONB NOT NULL
+);
+
+-- Query JSONB
+SELECT data->>'name' FROM products;
+SELECT * FROM products WHERE data @> '{"active": true}';
+SELECT * FROM products WHERE data->'tags' ? 'sale';
+
+-- Array types
+CREATE TABLE posts (
+    id SERIAL PRIMARY KEY,
+    tags TEXT[] DEFAULT '{}'
+);
+
+-- Array operations
+SELECT * FROM posts WHERE 'javascript' = ANY(tags);
+SELECT * FROM posts WHERE tags @> ARRAY['javascript'];
+INSERT INTO posts (tags) VALUES (ARRAY['sql', 'database']);
+UPDATE posts SET tags = array_append(tags, 'new-tag');
+
+-- Range types
+CREATE TABLE reservations (
+    id SERIAL PRIMARY KEY,
+    room_id INTEGER,
+    during TSTZRANGE
+);
+
+-- Range operations
+SELECT * FROM reservations 
+WHERE during && '[2024-06-01, 2024-06-15)';
+
+-- Network types
+CREATE TABLE servers (
+    id SERIAL PRIMARY KEY,
+    ip_address INET,
+    network CIDR
+);
+
+-- Geometric types
+CREATE TABLE locations (
+    id SERIAL PRIMARY KEY,
+    coords POINT,
+    area POLYGON
+);
+
+-- Full-text search type
+CREATE TABLE articles (
+    id SERIAL PRIMARY KEY,
+    content TEXT,
+    search_vector TSVECTOR
+);
+```
+
+## JSONB Operations
+
+```sql
+-- Create table with JSONB
+CREATE TABLE events (
+    id SERIAL PRIMARY KEY,
+    payload JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Insert JSONB
+INSERT INTO events (payload) VALUES (
+    '{"type": "click", "page": "/home", "user": {"id": 123, "name": "John"}}'
+);
+
+-- Access operators
+SELECT payload->>'type' AS type FROM events;           -- Get as text
+SELECT payload->'user'->>'name' FROM events;           -- Nested access
+SELECT payload #> '{user,name}' FROM events;           -- Path access
+SELECT payload #>> '{user,name}' FROM events;          -- Path as text
+
+-- Containment
+SELECT * FROM events WHERE payload @> '{"type": "click"}';
+SELECT * FROM events WHERE payload ? 'type';            -- Key exists
+SELECT * FROM events WHERE payload ?| ARRAY['type', 'page'];  -- Any key exists
+SELECT * FROM events WHERE payload ?& ARRAY['type', 'page'];  -- All keys exist
+
+-- JSONB functions
+SELECT jsonb_object_keys(payload) FROM events;
+SELECT jsonb_array_elements(payload->'items') FROM events;
+SELECT jsonb_each(payload) FROM events;
+
+-- Update JSONB
+UPDATE events SET payload = payload || '{"processed": true}';
+UPDATE events SET payload = jsonb_set(payload, '{status}', '"completed"');
+UPDATE events SET payload = payload - 'temp_field';  -- Remove key
+
+-- Index JSONB
+CREATE INDEX idx_events_payload ON events USING gin (payload);
+CREATE INDEX idx_events_type ON events ((payload->>'type'));
+```
+
+## Full-Text Search
+
+```sql
+-- Create table with search vector
+CREATE TABLE documents (
+    id SERIAL PRIMARY KEY,
+    title TEXT,
+    body TEXT,
+    search_vector TSVECTOR
+);
+
+-- Create GIN index
+CREATE INDEX idx_documents_search ON documents USING gin (search_vector);
+
+-- Populate search vector
+UPDATE documents SET search_vector = 
+    setweight(to_tsvector('english', COALESCE(title, '')), 'A') ||
+    setweight(to_tsvector('english', COALESCE(body, '')), 'B');
+
+-- Auto-update with trigger
+CREATE FUNCTION documents_search_trigger() RETURNS trigger AS $$
+BEGIN
+    NEW.search_vector := 
+        setweight(to_tsvector('english', COALESCE(NEW.title, '')), 'A') ||
+        setweight(to_tsvector('english', COALESCE(NEW.body, '')), 'B');
+    RETURN NEW;
+END
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tsvector_update BEFORE INSERT OR UPDATE
+ON documents FOR EACH ROW EXECUTE FUNCTION documents_search_trigger();
+
+-- Search queries
+SELECT * FROM documents 
+WHERE search_vector @@ to_tsquery('english', 'database & optimization');
+
+-- With ranking
+SELECT 
+    title,
+    ts_rank(search_vector, query) AS rank
+FROM 
+    documents,
+    to_tsquery('english', 'postgresql | database') AS query
+WHERE search_vector @@ query
+ORDER BY rank DESC;
+
+-- Highlight matches
+SELECT 
+    ts_headline('english', body, to_tsquery('database'), 
+        'StartSel=<b>, StopSel=</b>, MaxWords=35, MinWords=15')
+FROM documents
+WHERE search_vector @@ to_tsquery('database');
+```
+
+## Window Functions & Advanced Queries
+
+```sql
+-- Partitioned aggregates
+SELECT 
+    department,
+    name,
+    salary,
+    AVG(salary) OVER (PARTITION BY department) AS dept_avg,
+    salary - AVG(salary) OVER (PARTITION BY department) AS diff_from_avg
+FROM employees;
+
+-- Running totals
+SELECT 
+    date,
+    revenue,
+    SUM(revenue) OVER (ORDER BY date) AS running_total,
+    SUM(revenue) OVER (
+        ORDER BY date 
+        ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+    ) AS week_rolling_sum
+FROM daily_sales;
+
+-- LATERAL joins
+SELECT 
+    c.name,
+    recent_orders.order_id,
+    recent_orders.total
+FROM customers c
+LEFT JOIN LATERAL (
+    SELECT id AS order_id, total 
+    FROM orders 
+    WHERE customer_id = c.id 
+    ORDER BY created_at DESC 
+    LIMIT 3
+) AS recent_orders ON true;
+
+-- FILTER clause
+SELECT 
+    COUNT(*) AS total,
+    COUNT(*) FILTER (WHERE status = 'active') AS active,
+    COUNT(*) FILTER (WHERE status = 'inactive') AS inactive,
+    SUM(amount) FILTER (WHERE type = 'credit') AS total_credits
+FROM transactions;
+
+-- GROUPING SETS
+SELECT 
+    region,
+    category,
+    SUM(sales)
+FROM sales
+GROUP BY GROUPING SETS (
+    (region, category),
+    (region),
+    (category),
+    ()
+);
+
+-- CUBE and ROLLUP
+SELECT region, category, SUM(sales)
+FROM sales
+GROUP BY CUBE (region, category);  -- All combinations
+
+SELECT year, quarter, month, SUM(sales)
+FROM sales
+GROUP BY ROLLUP (year, quarter, month);  -- Hierarchical
+```
+
+## Transactions & Concurrency
+
+```sql
+-- Basic transaction
+BEGIN;
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+COMMIT;
+
+-- Savepoints
+BEGIN;
+INSERT INTO orders (customer_id, total) VALUES (1, 500);
+SAVEPOINT order_created;
+INSERT INTO order_items (order_id, product_id) VALUES (1, 1);
+-- Something went wrong
+ROLLBACK TO SAVEPOINT order_created;
+-- Try again or handle error
+COMMIT;
+
+-- Isolation levels
+BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+-- Strongest isolation, prevents phantom reads
+COMMIT;
+
+BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+-- Prevents non-repeatable reads
+COMMIT;
+
+-- Advisory locks (application-level)
+SELECT pg_advisory_lock(12345);     -- Acquire
+SELECT pg_advisory_unlock(12345);   -- Release
+
+-- Try lock (non-blocking)
+SELECT pg_try_advisory_lock(12345);
+
+-- Row-level locking
+SELECT * FROM accounts WHERE id = 1 FOR UPDATE;  -- Lock for update
+SELECT * FROM accounts WHERE id = 1 FOR SHARE;   -- Lock for read
+SELECT * FROM accounts WHERE id = 1 FOR UPDATE SKIP LOCKED;  -- Skip if locked
+```
+
+## Common Table Expressions
+
+```sql
+-- Recursive CTE for hierarchical data
+WITH RECURSIVE category_tree AS (
+    -- Base case: root categories
+    SELECT id, name, parent_id, 0 AS depth, name::TEXT AS path
+    FROM categories
+    WHERE parent_id IS NULL
+    
+    UNION ALL
+    
+    -- Recursive case
+    SELECT c.id, c.name, c.parent_id, ct.depth + 1, ct.path || ' > ' || c.name
+    FROM categories c
+    JOIN category_tree ct ON c.parent_id = ct.id
+)
+SELECT * FROM category_tree ORDER BY path;
+
+-- CTE with INSERT/UPDATE/DELETE
+WITH deleted AS (
+    DELETE FROM expired_sessions 
+    WHERE expires_at < NOW() 
+    RETURNING *
+)
+INSERT INTO session_archive 
+SELECT * FROM deleted;
+
+-- Multiple CTEs
+WITH 
+monthly_sales AS (
+    SELECT 
+        DATE_TRUNC('month', created_at) AS month,
+        SUM(total) AS revenue
+    FROM orders
+    GROUP BY 1
+),
+growth AS (
+    SELECT 
+        month,
+        revenue,
+        LAG(revenue) OVER (ORDER BY month) AS prev_revenue,
+        revenue - LAG(revenue) OVER (ORDER BY month) AS growth
+    FROM monthly_sales
+)
+SELECT 
+    month,
+    revenue,
+    growth,
+    ROUND(growth / NULLIF(prev_revenue, 0) * 100, 2) AS growth_pct
+FROM growth;
+```
+
+## Extensions
+
+```sql
+-- List available extensions
+SELECT * FROM pg_available_extensions;
+
+-- Install extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+
+-- UUID generation
+SELECT uuid_generate_v4();
+SELECT gen_random_uuid();  -- Built-in in PG 13+
+
+-- Encryption (pgcrypto)
+SELECT crypt('mypassword', gen_salt('bf'));
+SELECT crypt('mypassword', stored_hash) = stored_hash;
+
+-- Fuzzy string matching (pg_trgm)
+CREATE INDEX idx_products_name_trgm ON products 
+USING gin (name gin_trgm_ops);
+
+SELECT * FROM products 
+WHERE name % 'ipone';  -- Finds "iPhone"
+
+SELECT name, similarity(name, 'ipone') AS sim
+FROM products
+ORDER BY sim DESC;
+```
+
+## Performance Tuning
+
+### Configuration
+
+```sql
+-- Key settings (postgresql.conf)
+-- Memory
+shared_buffers = '4GB'              -- 25% of RAM
+effective_cache_size = '12GB'       -- 75% of RAM
+work_mem = '256MB'                  -- Per operation
+maintenance_work_mem = '1GB'        -- For VACUUM, CREATE INDEX
+
+-- Parallelism
+max_parallel_workers_per_gather = 4
+max_parallel_workers = 8
+max_parallel_maintenance_workers = 4
+
+-- Write-ahead log
+wal_buffers = '64MB'
+checkpoint_completion_target = 0.9
+
+-- Query planner
+random_page_cost = 1.1              -- For SSD (default 4.0 for HDD)
+effective_io_concurrency = 200      -- For SSD
+```
+
+### Monitoring Queries
+
+```sql
+-- Slow queries (requires pg_stat_statements)
+SELECT 
+    round(total_exec_time::numeric, 2) AS total_ms,
+    calls,
+    round(mean_exec_time::numeric, 2) AS avg_ms,
+    query
+FROM pg_stat_statements
+ORDER BY total_exec_time DESC
+LIMIT 20;
+
+-- Cache hit ratio
+SELECT 
+    sum(heap_blks_read) AS heap_read,
+    sum(heap_blks_hit) AS heap_hit,
+    round(sum(heap_blks_hit) / (sum(heap_blks_hit) + sum(heap_blks_read))::numeric * 100, 2) AS cache_hit_ratio
+FROM pg_statio_user_tables;
+
+-- Index hit ratio
+SELECT 
+    indexrelname,
+    idx_blks_read,
+    idx_blks_hit,
+    round(idx_blks_hit::numeric / (idx_blks_hit + idx_blks_read) * 100, 2) AS hit_ratio
+FROM pg_statio_user_indexes
+WHERE idx_blks_hit + idx_blks_read > 0;
+
+-- Table bloat
+SELECT 
+    schemaname,
+    relname,
+    n_dead_tup,
+    n_live_tup,
+    round(n_dead_tup::numeric / nullif(n_live_tup, 0) * 100, 2) AS dead_ratio
+FROM pg_stat_user_tables
+WHERE n_dead_tup > 1000
+ORDER BY n_dead_tup DESC;
+```
+
+### Maintenance
+
+```sql
+-- Vacuum (reclaim dead tuple space)
+VACUUM VERBOSE users;
+
+-- Analyze (update statistics)
+ANALYZE users;
+
+-- Both together
+VACUUM ANALYZE users;
+
+-- Full vacuum (locks table, reclaims all space)
+VACUUM FULL users;
+
+-- Reindex
+REINDEX INDEX CONCURRENTLY idx_users_email;
+REINDEX TABLE users;
+
+-- Check for long-running transactions
+SELECT 
+    pid,
+    age(clock_timestamp(), xact_start) AS duration,
+    query
+FROM pg_stat_activity
+WHERE xact_start IS NOT NULL
+ORDER BY xact_start;
+```
+
+## Backup & Restore
+
+```bash
+# pg_dump - single database backup
+pg_dump -h localhost -U user -d mydb > backup.sql
+pg_dump -h localhost -U user -d mydb -Fc > backup.dump  # Custom format (compressed)
+pg_dump -h localhost -U user -d mydb -Fd -j 4 -f backup_dir  # Directory format, parallel
+
+# Restore from SQL
+psql -h localhost -U user -d mydb < backup.sql
+
+# Restore from custom format
+pg_restore -h localhost -U user -d mydb backup.dump
+
+# pg_dumpall - all databases
+pg_dumpall -h localhost -U postgres > all_databases.sql
+
+# Table-specific backup
+pg_dump -h localhost -U user -d mydb -t users > users.sql
+
+# Schema only (no data)
+pg_dump -h localhost -U user -d mydb --schema-only > schema.sql
+
+# Data only (no schema)
+pg_dump -h localhost -U user -d mydb --data-only > data.sql
+```
+
+## Security
+
+```sql
+-- Create role
+CREATE ROLE readonly_user WITH LOGIN PASSWORD 'secure_password';
+
+-- Grant permissions
+GRANT CONNECT ON DATABASE mydb TO readonly_user;
+GRANT USAGE ON SCHEMA public TO readonly_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO readonly_user;
+
+-- Default privileges for future tables
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT SELECT ON TABLES TO readonly_user;
+
+-- Row-level security
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY orders_owner_policy ON orders
+FOR ALL
+USING (user_id = current_setting('app.current_user_id')::integer);
+
+-- SSL connections
+-- In postgresql.conf:
+-- ssl = on
+-- ssl_cert_file = 'server.crt'
+-- ssl_key_file = 'server.key'
+
+-- Check SSL status
+SELECT ssl, version FROM pg_stat_ssl WHERE pid = pg_backend_pid();
+```
+
+## Useful Patterns
+
+### Upsert (INSERT ON CONFLICT)
+
+```sql
+INSERT INTO users (email, name, updated_at)
+VALUES ('john@example.com', 'John Doe', NOW())
+ON CONFLICT (email) 
+DO UPDATE SET 
+    name = EXCLUDED.name,
+    updated_at = EXCLUDED.updated_at;
+
+-- Do nothing on conflict
+INSERT INTO users (email, name)
+VALUES ('john@example.com', 'John Doe')
+ON CONFLICT (email) DO NOTHING;
+```
+
+### Returning Clause
+
+```sql
+-- Return inserted data
+INSERT INTO users (name, email) 
+VALUES ('John', 'john@example.com')
+RETURNING id, created_at;
+
+-- Return updated data
+UPDATE products 
+SET stock = stock - 1 
+WHERE id = 123 AND stock > 0
+RETURNING id, stock;
+
+-- Return deleted data
+DELETE FROM expired_tokens 
+WHERE expires_at < NOW()
+RETURNING token, user_id;
+```
+
+### Generate Series
+
+```sql
+-- Date series
+SELECT generate_series(
+    '2024-01-01'::date, 
+    '2024-12-31'::date, 
+    '1 day'::interval
+) AS date;
+
+-- Fill gaps in time series
+SELECT 
+    dates.date,
+    COALESCE(orders.count, 0) AS order_count
+FROM generate_series(
+    '2024-01-01'::date, 
+    '2024-01-31'::date, 
+    '1 day'
+) AS dates(date)
+LEFT JOIN (
+    SELECT DATE(created_at) AS date, COUNT(*) AS count
+    FROM orders
+    GROUP BY 1
+) orders ON dates.date = orders.date;
+
+-- Number series
+SELECT generate_series(1, 100) AS n;
+```

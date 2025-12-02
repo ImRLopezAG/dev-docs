@@ -1,0 +1,6 @@
+{
+	"title": "Lambda",
+	"description": "Serverless Functions",
+	"icon": "Zap",
+	"pages": ["index", "triggers", "layers", "concurrency", "monitoring", "cli"]
+}

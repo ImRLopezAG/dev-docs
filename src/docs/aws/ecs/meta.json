@@ -1,0 +1,6 @@
+{
+	"title": "ECS",
+	"description": "Elastic Container Service",
+	"icon": "Container",
+	"pages": ["index", "cli"]
+}

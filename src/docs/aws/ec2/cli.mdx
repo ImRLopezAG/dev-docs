@@ -1,0 +1,376 @@
+---
+title: EC2 CLI Reference
+description: AWS CLI commands for Elastic Compute Cloud
+---
+
+Complete reference for AWS EC2 CLI commands with examples.
+
+## Instance Management
+
+### Launch Instance
+
+```bash
+aws ec2 run-instances \
+  --image-id ami-0abcdef1234567890 \
+  --instance-type t3.micro \
+  --key-name my-key \
+  --security-group-ids sg-0123456789abcdef0 \
+  --subnet-id subnet-0123456789abcdef0 \
+  --count 1
+```
+
+**Common Options:**
+| Option | Description |
+|--------|-------------|
+| `--image-id` | AMI ID (required) |
+| `--instance-type` | Instance type (required) |
+| `--key-name` | SSH key pair name |
+| `--security-group-ids` | Security group IDs |
+| `--subnet-id` | Subnet to launch in |
+| `--count` | Number of instances |
+| `--user-data` | Startup script |
+| `--iam-instance-profile` | IAM role |
+| `--tag-specifications` | Resource tags |
+
+### Launch with User Data
+
+```bash
+aws ec2 run-instances \
+  --image-id ami-0abcdef1234567890 \
+  --instance-type t3.micro \
+  --key-name my-key \
+  --user-data file://startup-script.sh \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=WebServer}]'
+```
+
+### Describe Instances
+
+```bash
+# List all instances
+aws ec2 describe-instances
+
+# Filter by state
+aws ec2 describe-instances --filters "Name=instance-state-name,Values=running"
+
+# Filter by tag
+aws ec2 describe-instances --filters "Name=tag:Name,Values=WebServer"
+
+# Get specific instance
+aws ec2 describe-instances --instance-ids i-0123456789abcdef0
+
+# Output instance IDs only
+aws ec2 describe-instances \
+  --query 'Reservations[*].Instances[*].InstanceId' \
+  --output text
+```
+
+### Start/Stop/Reboot Instances
+
+```bash
+# Start instances
+aws ec2 start-instances --instance-ids i-0123456789abcdef0
+
+# Stop instances
+aws ec2 stop-instances --instance-ids i-0123456789abcdef0
+
+# Reboot instances
+aws ec2 reboot-instances --instance-ids i-0123456789abcdef0
+
+# Terminate instances
+aws ec2 terminate-instances --instance-ids i-0123456789abcdef0
+```
+
+### Modify Instance
+
+```bash
+# Change instance type (must be stopped)
+aws ec2 modify-instance-attribute \
+  --instance-id i-0123456789abcdef0 \
+  --instance-type t3.large
+
+# Enable detailed monitoring
+aws ec2 monitor-instances --instance-ids i-0123456789abcdef0
+
+# Disable termination protection
+aws ec2 modify-instance-attribute \
+  --instance-id i-0123456789abcdef0 \
+  --no-disable-api-termination
+```
+
+## AMI Management
+
+### Create AMI
+
+```bash
+aws ec2 create-image \
+  --instance-id i-0123456789abcdef0 \
+  --name "MyWebServerAMI" \
+  --description "Web server with Apache installed" \
+  --no-reboot
+```
+
+### Describe AMIs
+
+```bash
+# List your AMIs
+aws ec2 describe-images --owners self
+
+# Find Amazon Linux 2 AMIs
+aws ec2 describe-images \
+  --owners amazon \
+  --filters "Name=name,Values=amzn2-ami-hvm-*-x86_64-gp2" \
+  --query 'Images | sort_by(@, &CreationDate) | [-1]'
+```
+
+### Copy AMI
+
+```bash
+aws ec2 copy-image \
+  --source-image-id ami-0123456789abcdef0 \
+  --source-region us-east-1 \
+  --region us-west-2 \
+  --name "MyWebServerAMI-Copy"
+```
+
+### Deregister AMI
+
+```bash
+aws ec2 deregister-image --image-id ami-0123456789abcdef0
+```
+
+## Key Pairs
+
+### Create Key Pair
+
+```bash
+aws ec2 create-key-pair \
+  --key-name my-key \
+  --query 'KeyMaterial' \
+  --output text > my-key.pem
+
+chmod 400 my-key.pem
+```
+
+### Import Key Pair
+
+```bash
+aws ec2 import-key-pair \
+  --key-name my-imported-key \
+  --public-key-material fileb://~/.ssh/id_rsa.pub
+```
+
+### List Key Pairs
+
+```bash
+aws ec2 describe-key-pairs
+```
+
+### Delete Key Pair
+
+```bash
+aws ec2 delete-key-pair --key-name my-key
+```
+
+## Security Groups
+
+### Create Security Group
+
+```bash
+aws ec2 create-security-group \
+  --group-name WebServerSG \
+  --description "Security group for web servers" \
+  --vpc-id vpc-0123456789abcdef0
+```
+
+### Add Inbound Rules
+
+```bash
+# Allow SSH
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-0123456789abcdef0 \
+  --protocol tcp \
+  --port 22 \
+  --cidr 10.0.0.0/8
+
+# Allow HTTP
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-0123456789abcdef0 \
+  --protocol tcp \
+  --port 80 \
+  --cidr 0.0.0.0/0
+
+# Allow HTTPS
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-0123456789abcdef0 \
+  --protocol tcp \
+  --port 443 \
+  --cidr 0.0.0.0/0
+```
+
+### Remove Inbound Rules
+
+```bash
+aws ec2 revoke-security-group-ingress \
+  --group-id sg-0123456789abcdef0 \
+  --protocol tcp \
+  --port 22 \
+  --cidr 10.0.0.0/8
+```
+
+### Describe Security Groups
+
+```bash
+aws ec2 describe-security-groups --group-ids sg-0123456789abcdef0
+```
+
+### Delete Security Group
+
+```bash
+aws ec2 delete-security-group --group-id sg-0123456789abcdef0
+```
+
+## Elastic IPs
+
+### Allocate Elastic IP
+
+```bash
+aws ec2 allocate-address --domain vpc
+```
+
+### Associate Elastic IP
+
+```bash
+aws ec2 associate-address \
+  --instance-id i-0123456789abcdef0 \
+  --allocation-id eipalloc-0123456789abcdef0
+```
+
+### Disassociate Elastic IP
+
+```bash
+aws ec2 disassociate-address --association-id eipassoc-0123456789abcdef0
+```
+
+### Release Elastic IP
+
+```bash
+aws ec2 release-address --allocation-id eipalloc-0123456789abcdef0
+```
+
+## EBS Volumes
+
+### Create Volume
+
+```bash
+aws ec2 create-volume \
+  --availability-zone us-east-1a \
+  --size 100 \
+  --volume-type gp3 \
+  --iops 3000 \
+  --throughput 125
+```
+
+### Attach Volume
+
+```bash
+aws ec2 attach-volume \
+  --volume-id vol-0123456789abcdef0 \
+  --instance-id i-0123456789abcdef0 \
+  --device /dev/sdf
+```
+
+### Detach Volume
+
+```bash
+aws ec2 detach-volume --volume-id vol-0123456789abcdef0
+```
+
+### Create Snapshot
+
+```bash
+aws ec2 create-snapshot \
+  --volume-id vol-0123456789abcdef0 \
+  --description "Backup snapshot"
+```
+
+### Delete Volume
+
+```bash
+aws ec2 delete-volume --volume-id vol-0123456789abcdef0
+```
+
+## Spot Instances
+
+### Request Spot Instances
+
+```bash
+aws ec2 request-spot-instances \
+  --instance-count 1 \
+  --type "one-time" \
+  --launch-specification file://spot-spec.json
+```
+
+### Describe Spot Requests
+
+```bash
+aws ec2 describe-spot-instance-requests
+```
+
+### Cancel Spot Request
+
+```bash
+aws ec2 cancel-spot-instance-requests \
+  --spot-instance-request-ids sir-0123456789abcdef0
+```
+
+### Get Spot Price History
+
+```bash
+aws ec2 describe-spot-price-history \
+  --instance-types t3.micro \
+  --product-descriptions "Linux/UNIX" \
+  --start-time $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+```
+
+## Tags
+
+### Add Tags
+
+```bash
+aws ec2 create-tags \
+  --resources i-0123456789abcdef0 \
+  --tags Key=Environment,Value=Production Key=Team,Value=DevOps
+```
+
+### Remove Tags
+
+```bash
+aws ec2 delete-tags \
+  --resources i-0123456789abcdef0 \
+  --tags Key=Environment
+```
+
+## Instance Connect
+
+### Send SSH Public Key
+
+```bash
+aws ec2-instance-connect send-ssh-public-key \
+  --instance-id i-0123456789abcdef0 \
+  --instance-os-user ec2-user \
+  --ssh-public-key file://~/.ssh/id_rsa.pub
+```
+
+## Console Output
+
+### Get Console Output
+
+```bash
+aws ec2 get-console-output --instance-id i-0123456789abcdef0
+```
+
+### Get Console Screenshot
+
+```bash
+aws ec2 get-console-screenshot --instance-id i-0123456789abcdef0
+```

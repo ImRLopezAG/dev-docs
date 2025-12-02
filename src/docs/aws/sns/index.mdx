@@ -1,0 +1,305 @@
+---
+title: AWS SNS
+description: Fully managed pub/sub messaging and mobile notifications
+---
+
+Amazon Simple Notification Service (SNS) is a managed messaging service for pub/sub communication, mobile push notifications, and SMS messaging.
+
+## Key Concepts
+
+| Concept | Description |
+|---------|-------------|
+| **Topic** | A logical channel for messages |
+| **Publisher** | Sends messages to topics |
+| **Subscriber** | Receives messages from topics |
+| **Message** | The content being sent |
+| **Subscription** | Link between topic and endpoint |
+
+## Topic Types
+
+| Type | Use Case | Features |
+|------|----------|----------|
+| **Standard** | High throughput | Best-effort ordering, at-least-once |
+| **FIFO** | Ordered delivery | Strict ordering, exactly-once |
+
+## Subscription Protocols
+
+| Protocol | Description | Use Case |
+|----------|-------------|----------|
+| `HTTP/HTTPS` | Webhook endpoints | API integrations |
+| `Email/Email-JSON` | Email notifications | Human notifications |
+| `SMS` | Text messages | Mobile alerts |
+| `SQS` | Queue integration | Async processing |
+| `Lambda` | Function trigger | Serverless processing |
+| `Kinesis Firehose` | Data streaming | Analytics pipelines |
+| `Application` | Mobile push | iOS/Android notifications |
+
+## Standard vs FIFO Topics
+
+| Feature | Standard | FIFO |
+|---------|----------|------|
+| Throughput | Unlimited | 300 msg/s (3000 with batching) |
+| Ordering | Best-effort | Strict FIFO |
+| Deduplication | No | Yes (5 minute window) |
+| Message groups | No | Yes |
+| Naming | Any name | Must end with `.fifo` |
+
+## Message Filtering
+
+Filter messages at subscription level:
+
+```json
+{
+  "eventType": ["order_created", "order_updated"],
+  "store": [{"prefix": "store-"}],
+  "price": [{"numeric": [">", 100]}],
+  "customer": [{"exists": true}]
+}
+```
+
+### Filter Operators
+
+| Operator | Example |
+|----------|---------|
+| Exact match | `["value"]` |
+| Prefix | `[{"prefix": "prod-"}]` |
+| Suffix | `[{"suffix": "-v2"}]` |
+| Numeric | `[{"numeric": [">=", 10, "<", 100]}]` |
+| Exists | `[{"exists": true}]` |
+| NOT | `[{"anything-but": ["ignore"]}]` |
+| OR | `["a", "b", "c"]` |
+
+## Message Attributes
+
+Add metadata to messages:
+
+```javascript
+await sns.publish({
+  TopicArn: 'arn:aws:sns:us-east-1:123456789012:my-topic',
+  Message: JSON.stringify({ orderId: '123' }),
+  MessageAttributes: {
+    eventType: {
+      DataType: 'String',
+      StringValue: 'order_created'
+    },
+    priority: {
+      DataType: 'Number',
+      StringValue: '1'
+    }
+  }
+});
+```
+
+## Lambda Integration
+
+SNS can trigger Lambda functions:
+
+```javascript
+export const handler = async (event) => {
+  for (const record of event.Records) {
+    const snsMessage = record.Sns;
+    console.log('Subject:', snsMessage.Subject);
+    console.log('Message:', snsMessage.Message);
+    console.log('Attributes:', snsMessage.MessageAttributes);
+    
+    // Process message
+    const data = JSON.parse(snsMessage.Message);
+    await processMessage(data);
+  }
+  
+  return { statusCode: 200 };
+};
+```
+
+## SQS Integration (Fan-out)
+
+Distribute messages to multiple queues:
+
+```
+                    ┌─────────────┐
+                    │   SQS Q1    │ → Consumer 1
+                    └─────────────┘
+      ┌─────────┐   ┌─────────────┐
+──────│   SNS   │───│   SQS Q2    │ → Consumer 2
+      │  Topic  │   └─────────────┘
+      └─────────┘   ┌─────────────┐
+                    │   SQS Q3    │ → Consumer 3
+                    └─────────────┘
+```
+
+## Mobile Push Notifications
+
+### Platform Applications
+
+| Platform | Service |
+|----------|---------|
+| iOS | APNs (Apple Push Notification service) |
+| Android | FCM (Firebase Cloud Messaging) |
+| Amazon | ADM (Amazon Device Messaging) |
+
+### Setup Push Notifications
+
+```bash
+# Create platform application
+aws sns create-platform-application \
+  --name MyApp-iOS \
+  --platform APNS \
+  --attributes PlatformCredential=PRIVATE_KEY,PlatformPrincipal=CERT
+
+# Create endpoint for device
+aws sns create-platform-endpoint \
+  --platform-application-arn arn:aws:sns:us-east-1:123456789012:app/APNS/MyApp-iOS \
+  --token DEVICE_TOKEN
+
+# Publish to device
+aws sns publish \
+  --target-arn arn:aws:sns:us-east-1:123456789012:endpoint/APNS/MyApp/abc123 \
+  --message '{"APNS": "{\"aps\": {\"alert\": \"Hello!\"}}"}'
+```
+
+## SMS Messaging
+
+### Send SMS
+
+```bash
+aws sns publish \
+  --phone-number +12345678901 \
+  --message "Your verification code is 123456"
+```
+
+### SMS Attributes
+
+```bash
+aws sns set-sms-attributes \
+  --attributes '{
+    "DefaultSMSType": "Transactional",
+    "DefaultSenderID": "MyApp",
+    "MonthlySpendLimit": "100"
+  }'
+```
+
+| SMS Type | Use Case |
+|----------|----------|
+| Transactional | Critical, time-sensitive (OTP, alerts) |
+| Promotional | Marketing, non-critical |
+
+## Dead-Letter Queues
+
+Handle failed deliveries:
+
+```bash
+aws sns set-subscription-attributes \
+  --subscription-arn arn:aws:sns:us-east-1:123456789012:my-topic:abc123 \
+  --attribute-name RedrivePolicy \
+  --attribute-value '{
+    "deadLetterTargetArn": "arn:aws:sqs:us-east-1:123456789012:my-dlq"
+  }'
+```
+
+## Delivery Status Logging
+
+Log message delivery status to CloudWatch:
+
+```bash
+aws sns set-topic-attributes \
+  --topic-arn arn:aws:sns:us-east-1:123456789012:my-topic \
+  --attribute-name HTTPSuccessFeedbackRoleArn \
+  --attribute-value arn:aws:iam::123456789012:role/SNSLoggingRole
+
+aws sns set-topic-attributes \
+  --topic-arn arn:aws:sns:us-east-1:123456789012:my-topic \
+  --attribute-name HTTPFailureFeedbackRoleArn \
+  --attribute-value arn:aws:iam::123456789012:role/SNSLoggingRole
+```
+
+## Access Control
+
+### Topic Policy
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {"AWS": "arn:aws:iam::123456789012:role/MyRole"},
+      "Action": "sns:Publish",
+      "Resource": "arn:aws:sns:us-east-1:123456789012:my-topic"
+    },
+    {
+      "Effect": "Allow",
+      "Principal": {"Service": "s3.amazonaws.com"},
+      "Action": "sns:Publish",
+      "Resource": "arn:aws:sns:us-east-1:123456789012:my-topic",
+      "Condition": {
+        "ArnLike": {"aws:SourceArn": "arn:aws:s3:::my-bucket"}
+      }
+    }
+  ]
+}
+```
+
+## Server-Side Encryption
+
+```bash
+aws sns create-topic \
+  --name my-encrypted-topic \
+  --attributes KmsMasterKeyId=alias/aws/sns
+```
+
+## FIFO Topics
+
+### Create FIFO Topic
+
+```bash
+aws sns create-topic \
+  --name my-topic.fifo \
+  --attributes FifoTopic=true,ContentBasedDeduplication=true
+```
+
+### Publish to FIFO
+
+```bash
+aws sns publish \
+  --topic-arn arn:aws:sns:us-east-1:123456789012:my-topic.fifo \
+  --message "Order 123 created" \
+  --message-group-id "orders" \
+  --message-deduplication-id "order-123-created"
+```
+
+## Pricing
+
+| Type | Cost |
+|------|------|
+| Publish | $0.50 per million requests |
+| HTTP/S delivery | $0.60 per million |
+| SQS/Lambda | Free |
+| SMS | Varies by country |
+| Email | $2.00 per 100,000 |
+
+## Best Practices
+
+### Design
+1. Use message filtering to reduce processing
+2. Implement idempotent consumers
+3. Use DLQs for failed messages
+4. Enable delivery status logging
+
+### Security
+1. Use topic policies for access control
+2. Enable server-side encryption
+3. Use VPC endpoints for private access
+4. Validate message signatures
+
+### Performance
+1. Use FIFO only when ordering is critical
+2. Batch publishes when possible
+3. Use message attributes for filtering
+4. Monitor delivery metrics
+
+## Next Steps
+
+<Cards>
+  <Card title="SNS CLI Reference" href="/docs/aws/sns/cli" description="Complete CLI commands" />
+  <Card title="SQS" href="/docs/aws/sqs" description="Simple Queue Service" />
+</Cards>

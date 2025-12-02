@@ -1,0 +1,418 @@
+---
+title: S3 CLI Reference
+description: AWS CLI commands for Simple Storage Service
+---
+
+Complete reference for AWS S3 CLI commands with examples.
+
+## High-Level Commands (s3)
+
+The `aws s3` commands provide simplified, high-level operations.
+
+### Copy Files
+
+```bash
+# Upload file to S3
+aws s3 cp file.txt s3://my-bucket/
+
+# Download file from S3
+aws s3 cp s3://my-bucket/file.txt ./
+
+# Copy between buckets
+aws s3 cp s3://source-bucket/file.txt s3://dest-bucket/
+
+# Copy with metadata
+aws s3 cp file.txt s3://my-bucket/ \
+  --metadata key1=value1,key2=value2
+
+# Copy with storage class
+aws s3 cp file.txt s3://my-bucket/ \
+  --storage-class STANDARD_IA
+```
+
+### Sync Directories
+
+```bash
+# Sync local folder to S3
+aws s3 sync ./local-folder s3://my-bucket/prefix/
+
+# Sync S3 to local
+aws s3 sync s3://my-bucket/prefix/ ./local-folder/
+
+# Sync with delete (remove files not in source)
+aws s3 sync ./local-folder s3://my-bucket/ --delete
+
+# Sync with exclusions
+aws s3 sync ./local-folder s3://my-bucket/ \
+  --exclude "*.log" \
+  --exclude ".git/*"
+
+# Sync only certain files
+aws s3 sync ./local-folder s3://my-bucket/ \
+  --include "*.jpg" \
+  --exclude "*"
+```
+
+### List Objects
+
+```bash
+# List buckets
+aws s3 ls
+
+# List objects in bucket
+aws s3 ls s3://my-bucket/
+
+# List with prefix
+aws s3 ls s3://my-bucket/prefix/
+
+# List recursively
+aws s3 ls s3://my-bucket/ --recursive
+
+# Human-readable sizes
+aws s3 ls s3://my-bucket/ --human-readable --summarize
+```
+
+### Move Files
+
+```bash
+# Move file within S3
+aws s3 mv s3://my-bucket/old-key.txt s3://my-bucket/new-key.txt
+
+# Move file from local to S3
+aws s3 mv file.txt s3://my-bucket/
+
+# Move with recursive
+aws s3 mv s3://my-bucket/old-prefix/ s3://my-bucket/new-prefix/ --recursive
+```
+
+### Remove Files
+
+```bash
+# Remove single object
+aws s3 rm s3://my-bucket/file.txt
+
+# Remove all objects with prefix
+aws s3 rm s3://my-bucket/prefix/ --recursive
+
+# Remove bucket (must be empty)
+aws s3 rb s3://my-bucket
+
+# Force remove bucket with all contents
+aws s3 rb s3://my-bucket --force
+```
+
+### Create Bucket
+
+```bash
+aws s3 mb s3://my-bucket --region us-east-1
+```
+
+### Presigned URLs
+
+```bash
+# Generate presigned URL for GET (default 1 hour)
+aws s3 presign s3://my-bucket/file.txt
+
+# Custom expiration (in seconds)
+aws s3 presign s3://my-bucket/file.txt --expires-in 300
+```
+
+## Low-Level Commands (s3api)
+
+The `aws s3api` commands provide direct access to S3 API operations.
+
+### Bucket Operations
+
+#### Create Bucket
+
+```bash
+# Create bucket (us-east-1)
+aws s3api create-bucket --bucket my-bucket
+
+# Create bucket (other regions)
+aws s3api create-bucket \
+  --bucket my-bucket \
+  --region us-west-2 \
+  --create-bucket-configuration LocationConstraint=us-west-2
+```
+
+#### Delete Bucket
+
+```bash
+aws s3api delete-bucket --bucket my-bucket
+```
+
+#### List Buckets
+
+```bash
+aws s3api list-buckets
+```
+
+#### Get Bucket Location
+
+```bash
+aws s3api get-bucket-location --bucket my-bucket
+```
+
+### Object Operations
+
+#### Put Object
+
+```bash
+aws s3api put-object \
+  --bucket my-bucket \
+  --key folder/file.txt \
+  --body file.txt
+
+# With encryption
+aws s3api put-object \
+  --bucket my-bucket \
+  --key folder/file.txt \
+  --body file.txt \
+  --server-side-encryption AES256
+
+# With content type
+aws s3api put-object \
+  --bucket my-bucket \
+  --key image.png \
+  --body image.png \
+  --content-type image/png
+```
+
+#### Get Object
+
+```bash
+aws s3api get-object \
+  --bucket my-bucket \
+  --key folder/file.txt \
+  output.txt
+
+# Get specific version
+aws s3api get-object \
+  --bucket my-bucket \
+  --key folder/file.txt \
+  --version-id abc123 \
+  output.txt
+```
+
+#### Delete Object
+
+```bash
+aws s3api delete-object \
+  --bucket my-bucket \
+  --key folder/file.txt
+
+# Delete specific version
+aws s3api delete-object \
+  --bucket my-bucket \
+  --key folder/file.txt \
+  --version-id abc123
+```
+
+#### Head Object (Get Metadata)
+
+```bash
+aws s3api head-object \
+  --bucket my-bucket \
+  --key folder/file.txt
+```
+
+#### List Objects
+
+```bash
+# List objects (v2)
+aws s3api list-objects-v2 --bucket my-bucket
+
+# With prefix
+aws s3api list-objects-v2 \
+  --bucket my-bucket \
+  --prefix logs/
+
+# Limit results
+aws s3api list-objects-v2 \
+  --bucket my-bucket \
+  --max-keys 100
+```
+
+### Versioning
+
+```bash
+# Enable versioning
+aws s3api put-bucket-versioning \
+  --bucket my-bucket \
+  --versioning-configuration Status=Enabled
+
+# Suspend versioning
+aws s3api put-bucket-versioning \
+  --bucket my-bucket \
+  --versioning-configuration Status=Suspended
+
+# Get versioning status
+aws s3api get-bucket-versioning --bucket my-bucket
+
+# List object versions
+aws s3api list-object-versions --bucket my-bucket
+```
+
+### Bucket Policies
+
+```bash
+# Put bucket policy
+aws s3api put-bucket-policy \
+  --bucket my-bucket \
+  --policy file://policy.json
+
+# Get bucket policy
+aws s3api get-bucket-policy --bucket my-bucket
+
+# Delete bucket policy
+aws s3api delete-bucket-policy --bucket my-bucket
+```
+
+### Public Access Block
+
+```bash
+# Block all public access
+aws s3api put-public-access-block \
+  --bucket my-bucket \
+  --public-access-block-configuration \
+    BlockPublicAcls=true,\
+    IgnorePublicAcls=true,\
+    BlockPublicPolicy=true,\
+    RestrictPublicBuckets=true
+
+# Get public access block
+aws s3api get-public-access-block --bucket my-bucket
+```
+
+### Encryption
+
+```bash
+# Set default encryption
+aws s3api put-bucket-encryption \
+  --bucket my-bucket \
+  --server-side-encryption-configuration '{
+    "Rules": [{
+      "ApplyServerSideEncryptionByDefault": {
+        "SSEAlgorithm": "AES256"
+      }
+    }]
+  }'
+
+# Get encryption configuration
+aws s3api get-bucket-encryption --bucket my-bucket
+
+# Delete encryption configuration
+aws s3api delete-bucket-encryption --bucket my-bucket
+```
+
+### Lifecycle Configuration
+
+```bash
+# Put lifecycle configuration
+aws s3api put-bucket-lifecycle-configuration \
+  --bucket my-bucket \
+  --lifecycle-configuration file://lifecycle.json
+
+# Get lifecycle configuration
+aws s3api get-bucket-lifecycle-configuration --bucket my-bucket
+
+# Delete lifecycle configuration
+aws s3api delete-bucket-lifecycle --bucket my-bucket
+```
+
+### CORS Configuration
+
+```bash
+# Put CORS configuration
+aws s3api put-bucket-cors \
+  --bucket my-bucket \
+  --cors-configuration file://cors.json
+
+# Get CORS configuration
+aws s3api get-bucket-cors --bucket my-bucket
+```
+
+### Static Website
+
+```bash
+# Enable static website hosting
+aws s3api put-bucket-website \
+  --bucket my-bucket \
+  --website-configuration '{
+    "IndexDocument": {"Suffix": "index.html"},
+    "ErrorDocument": {"Key": "error.html"}
+  }'
+
+# Get website configuration
+aws s3api get-bucket-website --bucket my-bucket
+```
+
+### Tags
+
+```bash
+# Put bucket tags
+aws s3api put-bucket-tagging \
+  --bucket my-bucket \
+  --tagging 'TagSet=[{Key=Environment,Value=Production}]'
+
+# Get bucket tags
+aws s3api get-bucket-tagging --bucket my-bucket
+
+# Put object tags
+aws s3api put-object-tagging \
+  --bucket my-bucket \
+  --key file.txt \
+  --tagging 'TagSet=[{Key=Status,Value=Archived}]'
+```
+
+### Access Control Lists (ACL)
+
+```bash
+# Get bucket ACL
+aws s3api get-bucket-acl --bucket my-bucket
+
+# Get object ACL
+aws s3api get-object-acl \
+  --bucket my-bucket \
+  --key file.txt
+
+# Put object ACL
+aws s3api put-object-acl \
+  --bucket my-bucket \
+  --key file.txt \
+  --acl private
+```
+
+### Multipart Upload
+
+```bash
+# Initiate multipart upload
+aws s3api create-multipart-upload \
+  --bucket my-bucket \
+  --key large-file.zip
+
+# Upload part
+aws s3api upload-part \
+  --bucket my-bucket \
+  --key large-file.zip \
+  --part-number 1 \
+  --body part1 \
+  --upload-id <upload-id>
+
+# Complete multipart upload
+aws s3api complete-multipart-upload \
+  --bucket my-bucket \
+  --key large-file.zip \
+  --upload-id <upload-id> \
+  --multipart-upload file://parts.json
+
+# List multipart uploads
+aws s3api list-multipart-uploads --bucket my-bucket
+
+# Abort multipart upload
+aws s3api abort-multipart-upload \
+  --bucket my-bucket \
+  --key large-file.zip \
+  --upload-id <upload-id>
+```

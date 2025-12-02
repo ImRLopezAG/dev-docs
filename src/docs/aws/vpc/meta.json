@@ -1,0 +1,6 @@
+{
+	"title": "VPC",
+	"description": "Virtual Private Cloud",
+	"icon": "Network",
+	"pages": ["index", "cli"]
+}
