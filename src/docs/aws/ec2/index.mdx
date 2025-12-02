@@ -93,10 +93,32 @@ chmod 400 my-key.pem
 
 ## Instance Lifecycle
 
-```text title="Instance States"
-Pending → Running → Stopping → Stopped → Terminated
-              ↓
-         Rebooting
+```mermaid
+flowchart LR
+    subgraph States["Instance States"]
+        P[Pending]
+        R[Running]
+        ST[Stopping]
+        S[Stopped]
+        T[Terminated]
+        RB[Rebooting]
+    end
+    
+    P -->|Launch Complete| R
+    R -->|Stop| ST
+    ST -->|Stop Complete| S
+    S -->|Start| P
+    S -->|Terminate| T
+    R -->|Terminate| T
+    R -->|Reboot| RB
+    RB -->|Reboot Complete| R
+    
+    style P fill:#744210,stroke:#d69e2e,color:#fff
+    style R fill:#276749,stroke:#48bb78,color:#fff
+    style ST fill:#4a5568,stroke:#718096,color:#fff
+    style S fill:#2c5282,stroke:#4299e1,color:#fff
+    style T fill:#9b2c2c,stroke:#fc8181,color:#fff
+    style RB fill:#553c9a,stroke:#805ad5,color:#fff
 ```
 
 | State | Description |

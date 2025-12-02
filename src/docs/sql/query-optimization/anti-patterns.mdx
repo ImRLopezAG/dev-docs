@@ -8,6 +8,7 @@ Understanding common SQL anti-patterns helps you write efficient queries from th
 ## The Deadly Seven
 
 ```mermaid
+
 flowchart TB
     subgraph "Performance Killers"
         A1[SELECT *]
@@ -18,6 +19,7 @@ flowchart TB
         A6[Missing Indexes]
         A7[Inefficient Pagination]
     end
+    
 ```
 
 ## 1. SELECT *
@@ -111,6 +113,7 @@ WHERE customer_id IN ( -- [!code highlight]
 ```
 
 ```mermaid
+
 sequenceDiagram
     participant App
     participant DB
@@ -151,6 +154,7 @@ SELECT * FROM products WHERE CONCAT(category, '-', name) = 'Electronics-Phone'; 
 ```
 
 ```mermaid
+
 flowchart LR
     subgraph "With Function"
         I1[Index on email] --> X1[Cannot use!]
@@ -372,12 +376,14 @@ LIMIT 20 OFFSET 100000; -- [!code error]
 ```
 
 ```mermaid
+
 flowchart LR
     subgraph "OFFSET Performance"
         P1[Page 1: 20 rows] --> |"Scan 20"| Fast
         P100[Page 100: 20 rows] --> |"Scan 2,000"| Medium
         P5000[Page 5000: 20 rows] --> |"Scan 100,000"| Slow
     end
+    
 ```
 </Tab>
 <Tab value="Solution">

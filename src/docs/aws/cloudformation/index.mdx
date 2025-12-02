@@ -15,6 +15,57 @@ AWS CloudFormation enables you to model, provision, and manage AWS resources usi
 | **Rollback** | Automatic rollback on failure |
 | **Cost Tracking** | Tag resources for billing |
 
+## Stack Lifecycle
+
+```mermaid
+flowchart LR
+    subgraph Template
+        T[CloudFormation Template]
+    end
+    
+    subgraph Operations["Stack Operations"]
+        C[CREATE]
+        U[UPDATE]
+        D[DELETE]
+    end
+    
+    subgraph States["Stack States"]
+        CP[CREATE_IN_PROGRESS]
+        CC[CREATE_COMPLETE]
+        UP[UPDATE_IN_PROGRESS]
+        UC[UPDATE_COMPLETE]
+        RF[ROLLBACK_IN_PROGRESS]
+        RB[ROLLBACK_COMPLETE]
+        DP[DELETE_IN_PROGRESS]
+        DC[DELETE_COMPLETE]
+    end
+    
+    T --> C
+    T --> U
+    C --> CP
+    CP --> CC
+    CP --> RF
+    RF --> RB
+    U --> UP
+    UP --> UC
+    UP --> RF
+    D --> DP
+    DP --> DC
+    
+    style T fill:#4a5568,stroke:#718096,color:#fff
+    style C fill:#276749,stroke:#48bb78,color:#fff
+    style U fill:#2c5282,stroke:#4299e1,color:#fff
+    style D fill:#9b2c2c,stroke:#fc8181,color:#fff
+    style CP fill:#744210,stroke:#d69e2e,color:#fff
+    style CC fill:#276749,stroke:#48bb78,color:#fff
+    style UP fill:#744210,stroke:#d69e2e,color:#fff
+    style UC fill:#2c5282,stroke:#4299e1,color:#fff
+    style RF fill:#9b2c2c,stroke:#fc8181,color:#fff
+    style RB fill:#4a5568,stroke:#718096,color:#fff
+    style DP fill:#744210,stroke:#d69e2e,color:#fff
+    style DC fill:#4a5568,stroke:#718096,color:#fff
+```
+
 ## Template Structure
 
 ### YAML Format (Recommended)
@@ -266,6 +317,49 @@ Resources:
 ## Nested Stacks
 
 Modularize templates:
+
+```mermaid
+flowchart TB
+    subgraph Parent["Root Stack"]
+        R[Root Template]
+    end
+    
+    subgraph Children["Nested Stacks"]
+        N1[Network Stack]
+        N2[Security Stack]
+        N3[Application Stack]
+        N4[Database Stack]
+    end
+    
+    subgraph Resources["AWS Resources"]
+        VPC[VPC, Subnets]
+        SG[Security Groups]
+        EC2[EC2, ECS]
+        RDS[RDS, DynamoDB]
+    end
+    
+    R --> N1
+    R --> N2
+    R --> N3
+    R --> N4
+    N1 --> VPC
+    N2 --> SG
+    N3 --> EC2
+    N4 --> RDS
+    N1 -.->|Exports| N3
+    N2 -.->|Exports| N3
+    N1 -.->|Exports| N4
+    
+    style R fill:#553c9a,stroke:#805ad5,color:#fff
+    style N1 fill:#2c5282,stroke:#4299e1,color:#fff
+    style N2 fill:#276749,stroke:#48bb78,color:#fff
+    style N3 fill:#744210,stroke:#d69e2e,color:#fff
+    style N4 fill:#285e61,stroke:#38b2ac,color:#fff
+    style VPC fill:#4a5568,stroke:#718096,color:#fff
+    style SG fill:#4a5568,stroke:#718096,color:#fff
+    style EC2 fill:#4a5568,stroke:#718096,color:#fff
+    style RDS fill:#4a5568,stroke:#718096,color:#fff
+```
 
 ```yaml
 Resources:

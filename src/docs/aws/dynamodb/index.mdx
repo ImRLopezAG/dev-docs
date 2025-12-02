@@ -20,6 +20,47 @@ Individual records in a table. Each item is a collection of attributes.
 ### Attributes
 Data elements within items. Similar to columns in relational databases.
 
+### Data Access Patterns
+
+```mermaid
+flowchart LR
+    subgraph Client["Application"]
+        APP[App Request]
+    end
+    
+    subgraph DDB["DynamoDB"]
+        direction TB
+        TABLE[Table]
+        GSI[Global Secondary Index]
+        LSI[Local Secondary Index]
+    end
+    
+    subgraph Operations["Access Patterns"]
+        Q1[Query by PK]
+        Q2[Query by PK + SK]
+        Q3[Query by GSI]
+        S[Scan - Avoid!]
+    end
+    
+    APP --> Q1
+    APP --> Q2
+    APP --> Q3
+    APP -.-> S
+    Q1 --> TABLE
+    Q2 --> TABLE
+    Q3 --> GSI
+    S --> TABLE
+    
+    style APP fill:#4a5568,stroke:#718096,color:#fff
+    style TABLE fill:#553c9a,stroke:#805ad5,color:#fff
+    style GSI fill:#2c5282,stroke:#4299e1,color:#fff
+    style LSI fill:#285e61,stroke:#38b2ac,color:#fff
+    style Q1 fill:#276749,stroke:#48bb78,color:#fff
+    style Q2 fill:#276749,stroke:#48bb78,color:#fff
+    style Q3 fill:#276749,stroke:#48bb78,color:#fff
+    style S fill:#9b2c2c,stroke:#fc8181,color:#fff
+```
+
 ### Primary Key
 
 Every table requires a primary key:
@@ -178,6 +219,40 @@ Avoid Scan operations in production. Design your data model to use Query operati
 ## Streams
 
 Capture item-level changes for real-time processing:
+
+```mermaid
+flowchart LR
+    subgraph Table["DynamoDB Table"]
+        W1[Write Operation]
+        W2[Update Operation]
+        W3[Delete Operation]
+    end
+    
+    subgraph Stream["DynamoDB Stream"]
+        S[Stream Records]
+    end
+    
+    subgraph Consumers["Stream Consumers"]
+        L[Lambda Function]
+        K[Kinesis]
+        APP[Application]
+    end
+    
+    W1 --> S
+    W2 --> S
+    W3 --> S
+    S --> L
+    S --> K
+    S --> APP
+    
+    style W1 fill:#276749,stroke:#48bb78,color:#fff
+    style W2 fill:#744210,stroke:#d69e2e,color:#fff
+    style W3 fill:#9b2c2c,stroke:#fc8181,color:#fff
+    style S fill:#553c9a,stroke:#805ad5,color:#fff
+    style L fill:#2c5282,stroke:#4299e1,color:#fff
+    style K fill:#285e61,stroke:#38b2ac,color:#fff
+    style APP fill:#4a5568,stroke:#718096,color:#fff
+```
 
 ```bash title="Enable Streams"
 aws dynamodb update-table \

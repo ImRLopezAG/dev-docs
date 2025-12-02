@@ -42,11 +42,32 @@ The basic building block - an isolated database environment in the cloud.
 
 High availability with automatic failover:
 
-```
-┌─────────────────┐     ┌─────────────────┐
-│  Primary DB     │────▶│  Standby DB     │
-│  (AZ-1)         │sync │  (AZ-2)         │
-└─────────────────┘     └─────────────────┘
+```mermaid
+flowchart LR
+    subgraph App["Application Layer"]
+        A[Application]
+    end
+    
+    subgraph DNS
+        EP[RDS Endpoint]
+    end
+    
+    subgraph Primary["Availability Zone 1"]
+        P[Primary DB]
+    end
+    
+    subgraph Standby["Availability Zone 2"]
+        S[Standby DB]
+    end
+    
+    A --> EP
+    EP --> P
+    P -->|Synchronous Replication| S
+    
+    style A fill:#4a5568,stroke:#718096,color:#fff
+    style EP fill:#553c9a,stroke:#805ad5,color:#fff
+    style P fill:#276749,stroke:#48bb78,color:#fff
+    style S fill:#2c5282,stroke:#4299e1,color:#fff
 ```
 
 Benefits:
@@ -59,13 +80,39 @@ Benefits:
 
 Scale read-heavy workloads:
 
-```
-┌─────────────────┐     ┌─────────────────┐
-│  Primary DB     │────▶│  Read Replica 1 │
-│                 │async└─────────────────┘
-│                 │     ┌─────────────────┐
-│                 │────▶│  Read Replica 2 │
-└─────────────────┘     └─────────────────┘
+```mermaid
+flowchart TB
+    subgraph App["Application"]
+        W[Write Queries]
+        R1[Read Queries]
+        R2[Read Queries]
+    end
+    
+    subgraph Primary["Primary Instance"]
+        P[Primary DB]
+    end
+    
+    subgraph Replicas["Read Replicas"]
+        RR1[Replica 1]
+        RR2[Replica 2]
+        RR3[Replica 3]
+    end
+    
+    W --> P
+    P -->|Async Replication| RR1
+    P -->|Async Replication| RR2
+    P -->|Async Replication| RR3
+    R1 --> RR1
+    R1 --> RR2
+    R2 --> RR3
+    
+    style W fill:#744210,stroke:#d69e2e,color:#fff
+    style R1 fill:#276749,stroke:#48bb78,color:#fff
+    style R2 fill:#276749,stroke:#48bb78,color:#fff
+    style P fill:#553c9a,stroke:#805ad5,color:#fff
+    style RR1 fill:#2c5282,stroke:#4299e1,color:#fff
+    style RR2 fill:#2c5282,stroke:#4299e1,color:#fff
+    style RR3 fill:#2c5282,stroke:#4299e1,color:#fff
 ```
 
 Features:

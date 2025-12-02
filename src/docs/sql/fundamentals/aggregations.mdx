@@ -8,6 +8,7 @@ Aggregations transform multiple rows into summary values. They are essential for
 ## How Aggregation Works
 
 ```mermaid
+
 flowchart LR
     subgraph "Input Rows"
         R1[Row 1: $100]
@@ -26,6 +27,7 @@ flowchart LR
     R3 --> F
     R4 --> F
     F --> O
+    
 ```
 
 ## Aggregate Functions
@@ -154,6 +156,7 @@ GROUP BY customer_id;
 GROUP BY divides rows into groups and applies aggregate functions to each group.
 
 ```mermaid
+
 flowchart TB
     subgraph "Original Data"
         R1[Category A - $100]
@@ -177,6 +180,7 @@ flowchart TB
     R5 --> G2
     G1 --> O1
     G2 --> O2
+    
 ```
 
 <Tabs items={['Basic', 'Multiple Columns', 'Expressions', 'With Dates']}>
@@ -268,11 +272,13 @@ GROUP BY
 ## HAVING vs WHERE
 
 ```mermaid
+
 flowchart LR
     A[FROM] --> B[WHERE<br/>Filters rows]
     B --> C[GROUP BY<br/>Groups rows]
     C --> D[HAVING<br/>Filters groups]
     D --> E[SELECT]
+    
 ```
 
 <Tabs items={['Comparison', 'WHERE', 'HAVING', 'Both']}>
@@ -369,6 +375,7 @@ GROUP BY ROLLUP(region, category);
 | ALL REGIONS | ALL CATEGORIES | 29000 |
 
 ```mermaid
+
 flowchart TB
     A[All Data] --> B[Region: North]
     A --> C[Region: South]
@@ -379,6 +386,7 @@ flowchart TB
     C --> H[Category: Clothing]
     C --> I[South Subtotal]
     A --> J[Grand Total]
+    
 ```
 </Tab>
 <Tab value="CUBE">

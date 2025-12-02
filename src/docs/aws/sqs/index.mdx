@@ -25,13 +25,42 @@ Amazon Simple Queue Service (SQS) is a fully managed message queuing service for
 
 ## Message Lifecycle
 
-```
-1. Producer sends message → Queue
-2. Consumer receives message (becomes invisible)
-3. Consumer processes message
-4. Consumer deletes message
-   OR
-   Visibility timeout expires → Message returns to queue
+```mermaid
+flowchart TD
+    subgraph Producer
+        P[Producer]
+    end
+    
+    subgraph Queue["SQS Queue"]
+        Q[Message in Queue]
+        INV[Message Invisible]
+    end
+    
+    subgraph Consumer
+        C[Consumer]
+    end
+    
+    subgraph Outcome
+        DEL[Message Deleted]
+        RET[Return to Queue]
+        DLQ[Dead Letter Queue]
+    end
+    
+    P -->|1. Send Message| Q
+    Q -->|2. Receive| C
+    Q -->|2. Visibility Timeout| INV
+    C -->|3a. Success| DEL
+    INV -->|3b. Timeout| RET
+    RET -->|4. Max Retries| DLQ
+    RET -->|4. Retry| Q
+    
+    style P fill:#2c5282,stroke:#4299e1,color:#fff
+    style Q fill:#553c9a,stroke:#805ad5,color:#fff
+    style INV fill:#4a5568,stroke:#718096,color:#fff
+    style C fill:#285e61,stroke:#38b2ac,color:#fff
+    style DEL fill:#276749,stroke:#48bb78,color:#fff
+    style RET fill:#744210,stroke:#d69e2e,color:#fff
+    style DLQ fill:#9b2c2c,stroke:#fc8181,color:#fff
 ```
 
 ## Standard vs FIFO Queues
@@ -154,6 +183,37 @@ aws sqs create-queue \
 ## Lambda Integration
 
 Configure Lambda to process SQS messages:
+
+```mermaid
+flowchart LR
+    subgraph Producers
+        P1[Producer 1]
+        P2[Producer 2]
+    end
+    
+    subgraph SQS
+        Q[SQS Queue]
+        DLQ[Dead Letter Queue]
+    end
+    
+    subgraph Lambda["Lambda Processing"]
+        ESM[Event Source Mapping]
+        L[Lambda Function]
+    end
+    
+    P1 --> Q
+    P2 --> Q
+    Q --> ESM
+    ESM -->|Batch| L
+    L -->|Failure| DLQ
+    
+    style P1 fill:#4a5568,stroke:#718096,color:#fff
+    style P2 fill:#4a5568,stroke:#718096,color:#fff
+    style Q fill:#553c9a,stroke:#805ad5,color:#fff
+    style DLQ fill:#9b2c2c,stroke:#fc8181,color:#fff
+    style ESM fill:#285e61,stroke:#38b2ac,color:#fff
+    style L fill:#2c5282,stroke:#4299e1,color:#fff
+```
 
 ```javascript
 export const handler = async (event) => {

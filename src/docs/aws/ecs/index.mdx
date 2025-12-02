@@ -7,15 +7,52 @@ Amazon Elastic Container Service (ECS) is a fully managed container orchestratio
 
 ## ECS Architecture
 
-```
-ECS Cluster
-├── Service A (Web App)
-│   ├── Task 1 → Container 1, Container 2
-│   └── Task 2 → Container 1, Container 2
-├── Service B (API)
-│   ├── Task 1 → Container 1
-│   └── Task 2 → Container 1
-└── Standalone Task → Container 1
+```mermaid
+flowchart TB
+    subgraph Cluster["ECS Cluster"]
+        subgraph ServiceA["Service A - Web App"]
+            T1[Task 1]
+            T2[Task 2]
+        end
+        
+        subgraph ServiceB["Service B - API"]
+            T3[Task 3]
+            T4[Task 4]
+        end
+        
+        T5[Standalone Task]
+    end
+    
+    subgraph External["External Access"]
+        ALB[Application Load Balancer]
+        SD[Service Discovery]
+    end
+    
+    subgraph Storage["Data Layer"]
+        ECR[ECR Registry]
+        SM[Secrets Manager]
+    end
+    
+    ALB --> ServiceA
+    ALB --> ServiceB
+    SD --> ServiceA
+    SD --> ServiceB
+    ECR --> T1
+    ECR --> T2
+    ECR --> T3
+    ECR --> T4
+    SM --> T1
+    SM --> T3
+    
+    style T1 fill:#553c9a,stroke:#805ad5,color:#fff
+    style T2 fill:#553c9a,stroke:#805ad5,color:#fff
+    style T3 fill:#2c5282,stroke:#4299e1,color:#fff
+    style T4 fill:#2c5282,stroke:#4299e1,color:#fff
+    style T5 fill:#4a5568,stroke:#718096,color:#fff
+    style ALB fill:#285e61,stroke:#38b2ac,color:#fff
+    style SD fill:#744210,stroke:#d69e2e,color:#fff
+    style ECR fill:#276749,stroke:#48bb78,color:#fff
+    style SM fill:#9b2c2c,stroke:#fc8181,color:#fff
 ```
 
 ## Launch Types
@@ -184,6 +221,35 @@ aws application-autoscaling put-scaling-policy \
 |----------|-------------|
 | Rolling Update | Replace tasks gradually |
 | Blue/Green | Shift traffic between task sets |
+
+```mermaid
+flowchart LR
+    subgraph Rolling["Rolling Update"]
+        direction TB
+        R1[Old Task 1] --> R2[New Task 1]
+        R3[Old Task 2] --> R4[New Task 2]
+        R5[Old Task 3] --> R6[New Task 3]
+    end
+    
+    subgraph BlueGreen["Blue/Green"]
+        direction TB
+        BG1[Blue Environment]
+        BG2[Green Environment]
+        BG3[Traffic Shift]
+        BG1 --> BG3
+        BG2 --> BG3
+    end
+    
+    style R1 fill:#4a5568,stroke:#718096,color:#fff
+    style R2 fill:#276749,stroke:#48bb78,color:#fff
+    style R3 fill:#4a5568,stroke:#718096,color:#fff
+    style R4 fill:#276749,stroke:#48bb78,color:#fff
+    style R5 fill:#4a5568,stroke:#718096,color:#fff
+    style R6 fill:#276749,stroke:#48bb78,color:#fff
+    style BG1 fill:#2c5282,stroke:#4299e1,color:#fff
+    style BG2 fill:#276749,stroke:#48bb78,color:#fff
+    style BG3 fill:#553c9a,stroke:#805ad5,color:#fff
+```
 
 ```json
 {

@@ -8,6 +8,7 @@ JOINs combine rows from two or more tables based on related columns. They are es
 ## How JOINs Work
 
 ```mermaid
+
 flowchart LR
     subgraph "Table A"
         A1[Row 1]
@@ -38,6 +39,7 @@ When you JOIN tables:
 ## Types of JOINs
 
 ```mermaid
+
 flowchart TB
     subgraph "JOIN Types"
         INNER["INNER JOIN<br/>Only matching rows"]
@@ -53,6 +55,7 @@ flowchart TB
 <Tabs items={['INNER', 'LEFT', 'RIGHT', 'FULL OUTER', 'CROSS']}>
 <Tab value="INNER">
 ```mermaid
+
 flowchart LR
     subgraph "INNER JOIN"
         direction TB
@@ -71,8 +74,6 @@ flowchart LR
             B3[103 - user_id: 5]
         end
     end
-    style A3 fill:#ffcccc
-    style B3 fill:#ffcccc
 ```
 
 **Only returns rows with matches in BOTH tables.**
@@ -92,6 +93,7 @@ INNER JOIN orders o ON u.id = o.user_id;
 </Tab>
 <Tab value="LEFT">
 ```mermaid
+
 flowchart LR
     subgraph "LEFT JOIN"
         direction TB
@@ -111,7 +113,6 @@ flowchart LR
             B3[103 - user_id: 5]
         end
     end
-    style B3 fill:#ffcccc
 ```
 
 **Returns ALL rows from the LEFT table, with NULLs where no match exists.**
@@ -132,6 +133,7 @@ LEFT JOIN orders o ON u.id = o.user_id;
 </Tab>
 <Tab value="RIGHT">
 ```mermaid
+
 flowchart LR
     subgraph "RIGHT JOIN"
         direction TB
@@ -151,7 +153,6 @@ flowchart LR
             B3[103 - user_id: 5]
         end
     end
-    style A3 fill:#ffcccc
 ```
 
 **Returns ALL rows from the RIGHT table, with NULLs where no match exists.**
@@ -176,6 +177,7 @@ RIGHT JOIN is rarely used. You can always rewrite it as a LEFT JOIN by swapping 
 </Tab>
 <Tab value="FULL OUTER">
 ```mermaid
+
 flowchart LR
     subgraph "FULL OUTER JOIN"
         direction TB
@@ -220,6 +222,7 @@ MySQL doesn't support FULL OUTER JOIN directly. Use UNION of LEFT and RIGHT JOIN
 </Tab>
 <Tab value="CROSS">
 ```mermaid
+
 flowchart TB
     subgraph "CROSS JOIN (Cartesian Product)"
         direction LR
@@ -312,6 +315,7 @@ WHERE o.status = 'completed';
 ```
 
 ```mermaid
+
 flowchart LR
     C[customers] -->|customer_id| O[orders]
     O -->|order_id| OI[order_items]
@@ -336,6 +340,7 @@ LEFT JOIN employees m ON e.manager_id = m.id;
 ```
 
 ```mermaid
+
 flowchart TB
     A[CEO - Alice<br/>manager_id: NULL] --> B[VP - Bob<br/>manager_id: 1]
     A --> C[VP - Carol<br/>manager_id: 1]
@@ -397,6 +402,7 @@ WHERE o.id IS NULL;
 ```
 
 ```mermaid
+
 flowchart LR
     subgraph "Find Unmatched"
         C[customers] -->|LEFT JOIN| O[orders]
@@ -483,6 +489,7 @@ ORDER BY o.customer_id, o.created_at DESC;
 ### Index Your JOIN Columns
 
 ```mermaid
+
 flowchart LR
     subgraph "Without Index"
         A1[Full Table Scan] --> B1["O(n * m) comparisons"]

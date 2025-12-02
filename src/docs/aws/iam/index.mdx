@@ -71,6 +71,40 @@ JSON documents that define permissions. Policies specify what actions are allowe
 | `Resource` | ARN of resources the actions apply to |
 | `Condition` | Optional conditions for when the policy applies |
 
+### Policy Evaluation Flow
+
+```mermaid
+flowchart TD
+    subgraph Request
+        R[API Request]
+    end
+    
+    subgraph Evaluation["Policy Evaluation"]
+        E1{Explicit Deny?}
+        E2{Explicit Allow?}
+        E3[Implicit Deny]
+    end
+    
+    subgraph Result
+        DENY[DENY]
+        ALLOW[ALLOW]
+    end
+    
+    R --> E1
+    E1 -->|Yes| DENY
+    E1 -->|No| E2
+    E2 -->|Yes| ALLOW
+    E2 -->|No| E3
+    E3 --> DENY
+    
+    style R fill:#4a5568,stroke:#718096,color:#fff
+    style E1 fill:#9b2c2c,stroke:#fc8181,color:#fff
+    style E2 fill:#276749,stroke:#48bb78,color:#fff
+    style E3 fill:#744210,stroke:#d69e2e,color:#fff
+    style DENY fill:#9b2c2c,stroke:#fc8181,color:#fff
+    style ALLOW fill:#276749,stroke:#48bb78,color:#fff
+```
+
 <Callout type="info" title="Policy Evaluation">
 When both Allow and Deny apply, Deny always wins. Explicit Deny > Explicit Allow > Implicit Deny.
 </Callout>
@@ -130,6 +164,33 @@ Set a strong password policy for IAM users:
 ### Cross-Account Access
 
 Allow users from one AWS account to access resources in another:
+
+```mermaid
+flowchart LR
+    subgraph AccountA["Account A - 111111111111"]
+        U[IAM User/Role]
+    end
+    
+    subgraph STS["AWS STS"]
+        AR[AssumeRole]
+    end
+    
+    subgraph AccountB["Account B - 222222222222"]
+        R[IAM Role]
+        RES[S3 / DynamoDB / etc.]
+    end
+    
+    U -->|1. Request AssumeRole| AR
+    AR -->|2. Validate Trust Policy| R
+    R -->|3. Return Temp Credentials| AR
+    AR -->|4. Temp Credentials| U
+    U -->|5. Access Resources| RES
+    
+    style U fill:#2c5282,stroke:#4299e1,color:#fff
+    style AR fill:#553c9a,stroke:#805ad5,color:#fff
+    style R fill:#276749,stroke:#48bb78,color:#fff
+    style RES fill:#744210,stroke:#d69e2e,color:#fff
+```
 
 ```json title="trust-policy.json"
 {

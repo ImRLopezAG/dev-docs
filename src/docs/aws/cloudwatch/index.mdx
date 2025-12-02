@@ -17,6 +17,53 @@ Amazon CloudWatch provides monitoring for AWS resources and applications. Collec
 | **Insights** | Query and analyze logs |
 | **Synthetics** | Canary monitoring |
 
+## CloudWatch Architecture
+
+```mermaid
+flowchart TB
+    subgraph Sources["Data Sources"]
+        EC2[EC2 Instances]
+        Lambda[Lambda Functions]
+        APP[Applications]
+        CW[CloudWatch Agent]
+    end
+    
+    subgraph CloudWatch["CloudWatch"]
+        M[Metrics]
+        L[Logs]
+        A[Alarms]
+    end
+    
+    subgraph Actions["Actions & Notifications"]
+        SNS[SNS Notifications]
+        AS[Auto Scaling]
+        DASH[Dashboards]
+    end
+    
+    EC2 --> M
+    Lambda --> M
+    APP --> L
+    CW --> M
+    CW --> L
+    M --> A
+    L --> A
+    A --> SNS
+    A --> AS
+    M --> DASH
+    L --> DASH
+    
+    style EC2 fill:#2c5282,stroke:#4299e1,color:#fff
+    style Lambda fill:#553c9a,stroke:#805ad5,color:#fff
+    style APP fill:#4a5568,stroke:#718096,color:#fff
+    style CW fill:#285e61,stroke:#38b2ac,color:#fff
+    style M fill:#276749,stroke:#48bb78,color:#fff
+    style L fill:#744210,stroke:#d69e2e,color:#fff
+    style A fill:#9b2c2c,stroke:#fc8181,color:#fff
+    style SNS fill:#553c9a,stroke:#805ad5,color:#fff
+    style AS fill:#2c5282,stroke:#4299e1,color:#fff
+    style DASH fill:#285e61,stroke:#38b2ac,color:#fff
+```
+
 ## Metrics
 
 ### Namespaces
@@ -104,6 +151,45 @@ Perform calculations on metrics:
 | `OK` | Metric within threshold |
 | `ALARM` | Metric breached threshold |
 | `INSUFFICIENT_DATA` | Not enough data |
+
+### Alarm Flow
+
+```mermaid
+flowchart LR
+    subgraph Metric["Metric Evaluation"]
+        M[CloudWatch Metric]
+        E[Evaluation Period]
+    end
+    
+    subgraph Alarm["Alarm States"]
+        OK[OK State]
+        AL[ALARM State]
+        ID[INSUFFICIENT_DATA]
+    end
+    
+    subgraph Actions
+        SNS[SNS Topic]
+        AS[Auto Scaling]
+        EC2[EC2 Action]
+    end
+    
+    M --> E
+    E -->|Within Threshold| OK
+    E -->|Exceeds Threshold| AL
+    E -->|No Data| ID
+    AL --> SNS
+    AL --> AS
+    AL --> EC2
+    
+    style M fill:#4a5568,stroke:#718096,color:#fff
+    style E fill:#2d3748,stroke:#4a5568,color:#fff
+    style OK fill:#276749,stroke:#48bb78,color:#fff
+    style AL fill:#9b2c2c,stroke:#fc8181,color:#fff
+    style ID fill:#744210,stroke:#d69e2e,color:#fff
+    style SNS fill:#553c9a,stroke:#805ad5,color:#fff
+    style AS fill:#2c5282,stroke:#4299e1,color:#fff
+    style EC2 fill:#285e61,stroke:#38b2ac,color:#fff
+```
 
 ### Create Alarm
 

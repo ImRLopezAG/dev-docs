@@ -41,6 +41,10 @@ function MermaidContent({ chart }: { chart: string }) {
 		fontFamily: 'inherit',
 		themeCSS: 'margin: 1.5rem auto 0;',
 		theme: resolvedTheme === 'dark' ? 'dark' : 'default',
+		themeVariables: {
+			clusterBkg: 'transparent',
+			clusterBorder: 'transparent',
+		},
 	})
 
 	const { svg, bindFunctions } = use(

@@ -17,6 +17,45 @@ Choose the right API type based on your use case. HTTP APIs are ~70% cheaper but
 | **HTTP API** | Simple HTTP APIs | Lower cost, faster, simpler |
 | **WebSocket API** | Real-time communication | Two-way communication |
 
+## Request Flow Architecture
+
+```mermaid
+flowchart LR
+    subgraph Client
+        A[Client Request]
+    end
+    
+    subgraph API["API Gateway"]
+        B[Authorizer]
+        C[Request Validation]
+        D[Throttling]
+        E[Caching]
+    end
+    
+    subgraph Backend
+        F[Lambda]
+        G[HTTP Endpoint]
+        H[AWS Service]
+    end
+    
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    E --> G
+    E --> H
+    
+    style A fill:#4a5568,stroke:#718096,color:#fff
+    style B fill:#2d3748,stroke:#4a5568,color:#fff
+    style C fill:#2d3748,stroke:#4a5568,color:#fff
+    style D fill:#2d3748,stroke:#4a5568,color:#fff
+    style E fill:#2d3748,stroke:#4a5568,color:#fff
+    style F fill:#553c9a,stroke:#805ad5,color:#fff
+    style G fill:#2c5282,stroke:#4299e1,color:#fff
+    style H fill:#285e61,stroke:#38b2ac,color:#fff
+```
+
 ## Key Concepts
 
 ### Resources and Methods
@@ -119,6 +158,57 @@ Mapping templates use Apache Velocity Template Language (VTL). Common functions:
 <Callout type="warn" title="Security First">
 Always implement proper authorization for production APIs. Never expose APIs without authentication.
 </Callout>
+
+### Authorization Flow
+
+```mermaid
+flowchart TD
+    subgraph Request
+        A[API Request]
+    end
+    
+    subgraph Auth["Authorization Layer"]
+        B{Authorizer Type}
+        C[IAM Auth]
+        D[Lambda Authorizer]
+        E[Cognito]
+        F[API Key]
+    end
+    
+    subgraph Validation
+        G[Validate Credentials]
+        H{Valid?}
+    end
+    
+    subgraph Result
+        I[Allow Access]
+        J[Deny Access]
+    end
+    
+    A --> B
+    B -->|SigV4| C
+    B -->|Custom| D
+    B -->|JWT| E
+    B -->|Key Header| F
+    C --> G
+    D --> G
+    E --> G
+    F --> G
+    G --> H
+    H -->|Yes| I
+    H -->|No| J
+    
+    style A fill:#4a5568,stroke:#718096,color:#fff
+    style B fill:#2d3748,stroke:#4a5568,color:#fff
+    style C fill:#2c5282,stroke:#4299e1,color:#fff
+    style D fill:#553c9a,stroke:#805ad5,color:#fff
+    style E fill:#285e61,stroke:#38b2ac,color:#fff
+    style F fill:#744210,stroke:#d69e2e,color:#fff
+    style G fill:#2d3748,stroke:#4a5568,color:#fff
+    style H fill:#4a5568,stroke:#718096,color:#fff
+    style I fill:#276749,stroke:#48bb78,color:#fff
+    style J fill:#9b2c2c,stroke:#fc8181,color:#fff
+```
 
 <Tabs items={['IAM', 'Lambda Authorizer', 'Cognito', 'API Keys']}>
 <Tab value="IAM">

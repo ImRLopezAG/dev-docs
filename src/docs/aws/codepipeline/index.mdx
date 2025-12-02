@@ -17,16 +17,42 @@ AWS CodePipeline is a fully managed continuous delivery service that helps you a
 
 ## Pipeline Structure
 
-```
-Pipeline
-├── Source Stage
-│   └── GitHub/CodeCommit Action
-├── Build Stage
-│   └── CodeBuild Action
-├── Test Stage
-│   └── CodeBuild Action
-└── Deploy Stage
-    └── ECS/Lambda/S3 Action
+```mermaid
+flowchart LR
+    subgraph Source["Source Stage"]
+        S[GitHub/CodeCommit]
+    end
+    
+    subgraph Build["Build Stage"]
+        B[CodeBuild]
+    end
+    
+    subgraph Test["Test Stage"]
+        T1[Unit Tests]
+        T2[Integration Tests]
+    end
+    
+    subgraph Approval
+        A[Manual Approval]
+    end
+    
+    subgraph Deploy["Deploy Stage"]
+        D[ECS/Lambda/S3]
+    end
+    
+    S -->|Artifact| B
+    B -->|Artifact| T1
+    B -->|Artifact| T2
+    T1 --> A
+    T2 --> A
+    A --> D
+    
+    style S fill:#4a5568,stroke:#718096,color:#fff
+    style B fill:#2c5282,stroke:#4299e1,color:#fff
+    style T1 fill:#553c9a,stroke:#805ad5,color:#fff
+    style T2 fill:#553c9a,stroke:#805ad5,color:#fff
+    style A fill:#744210,stroke:#d69e2e,color:#fff
+    style D fill:#276749,stroke:#48bb78,color:#fff
 ```
 
 ## Action Types

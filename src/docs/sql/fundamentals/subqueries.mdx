@@ -8,6 +8,7 @@ Subqueries (nested queries) are queries embedded within other queries. They allo
 ## Subquery Flow
 
 ```mermaid
+
 flowchart TD
     subgraph "Outer Query"
         O[SELECT * FROM orders<br/>WHERE customer_id IN ...]
@@ -17,6 +18,7 @@ flowchart TD
     end
     S --> |Result Set| O
     O --> R[Final Result]
+    
 ```
 
 ## Types of Subqueries
@@ -134,6 +136,7 @@ WHERE o.total > (
 ```
 
 ```mermaid
+
 flowchart TD
     subgraph "Outer Query"
         R1[Row 1: customer_id = 1]
@@ -148,6 +151,7 @@ flowchart TD
     R1 --> S1
     R2 --> S2
     R3 --> S3
+    
 ```
 
 <Callout type="warn" title="Performance Warning">
@@ -162,12 +166,14 @@ Consider rewriting as JOINs or CTEs for better performance.
 ### EXISTS and NOT EXISTS
 
 ```mermaid
+
 flowchart LR
     subgraph "EXISTS Check"
         A[Outer Row] --> B{Subquery returns<br/>any rows?}
         B -->|Yes| C[Include Row]
         B -->|No| D[Exclude Row]
     end
+    
 ```
 
 ```sql

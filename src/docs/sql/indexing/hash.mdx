@@ -8,6 +8,7 @@ Hash indexes use a hash function to map keys to bucket locations, providing O(1)
 ## How Hash Indexes Work
 
 ```mermaid
+
 flowchart LR
     subgraph "Hash Index"
         K1[Key: 'alice'] --> H[Hash Function]
@@ -22,11 +23,13 @@ flowchart LR
         B2 --> R1[Row Pointer]
         B2 --> R2[Row Pointer]
     end
+    
 ```
 
 ### Hash Function Process
 
 ```mermaid
+
 sequenceDiagram
     participant Q as Query
     participant H as Hash Function
@@ -127,6 +130,7 @@ SELECT MIN(email) FROM users;
 </Tab>
 <Tab value="Performance">
 ```mermaid
+
 graph LR
     subgraph "B-Tree: O(log n)"
         BT[1 billion rows] --> BTL[~30 comparisons]
@@ -135,6 +139,7 @@ graph LR
     subgraph "Hash: O(1)"
         HT[1 billion rows] --> HTL[~1 hash + scan]
     end
+    
 ```
 
 | Metric | Hash | B-Tree |
@@ -191,6 +196,7 @@ SELECT * FROM orders WHERE status = 'pending';
 ## Hash Collisions
 
 ```mermaid
+
 flowchart TB
     subgraph "Hash Collision"
         K1[Key: 'apple'] --> |hash = 42| B[Bucket 42]
@@ -199,6 +205,7 @@ flowchart TB
         
         B --> C[Chain of entries<br/>apple → banana → cherry]
     end
+    
 ```
 
 When multiple keys hash to the same bucket:

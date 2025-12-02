@@ -36,6 +36,78 @@ Before diving in, make sure you have:
 
 ## Service Categories
 
+### AWS Services Architecture
+
+```mermaid
+flowchart TB
+    subgraph Compute["Compute Services"]
+        EC2[EC2]
+        Lambda[Lambda]
+        ECS[ECS/EKS]
+    end
+    
+    subgraph Storage["Storage Services"]
+        S3[S3]
+        EBS[EBS]
+    end
+    
+    subgraph Database["Database Services"]
+        DynamoDB[DynamoDB]
+        RDS[RDS]
+    end
+    
+    subgraph Networking["Networking"]
+        VPC[VPC]
+        APIGW[API Gateway]
+    end
+    
+    subgraph DevOps["DevOps & Monitoring"]
+        CFN[CloudFormation]
+        Pipeline[CodePipeline]
+        CW[CloudWatch]
+    end
+    
+    subgraph Messaging["Messaging"]
+        SQS[SQS]
+        SNS[SNS]
+    end
+    
+    subgraph Security["Security"]
+        IAM[IAM]
+        SM[Secrets Manager]
+    end
+    
+    APIGW --> Lambda
+    Lambda --> DynamoDB
+    Lambda --> S3
+    EC2 --> EBS
+    ECS --> ECR
+    VPC --> EC2
+    VPC --> RDS
+    Pipeline --> ECS
+    CW --> EC2
+    CW --> Lambda
+    SNS --> SQS
+    SNS --> Lambda
+    
+    style EC2 fill:#2c5282,stroke:#4299e1,color:#fff
+    style Lambda fill:#553c9a,stroke:#805ad5,color:#fff
+    style ECS fill:#285e61,stroke:#38b2ac,color:#fff
+    style S3 fill:#744210,stroke:#d69e2e,color:#fff
+    style EBS fill:#4a5568,stroke:#718096,color:#fff
+    style DynamoDB fill:#276749,stroke:#48bb78,color:#fff
+    style RDS fill:#2c5282,stroke:#4299e1,color:#fff
+    style VPC fill:#553c9a,stroke:#805ad5,color:#fff
+    style APIGW fill:#285e61,stroke:#38b2ac,color:#fff
+    style CFN fill:#744210,stroke:#d69e2e,color:#fff
+    style Pipeline fill:#4a5568,stroke:#718096,color:#fff
+    style CW fill:#276749,stroke:#48bb78,color:#fff
+    style SQS fill:#2c5282,stroke:#4299e1,color:#fff
+    style SNS fill:#553c9a,stroke:#805ad5,color:#fff
+    style IAM fill:#9b2c2c,stroke:#fc8181,color:#fff
+    style SM fill:#285e61,stroke:#38b2ac,color:#fff
+```
+
 ### Compute Services
 - **EC2**: Virtual servers in the cloud
 - **Lambda**: Serverless compute service

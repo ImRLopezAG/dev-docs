@@ -48,6 +48,33 @@ Buckets are created in specific AWS regions. Choose a region close to your users
 </Tab>
 </Tabs>
 
+### Storage Class Lifecycle
+
+```mermaid
+flowchart LR
+    subgraph Lifecycle["S3 Lifecycle Transitions"]
+        S[S3 Standard]
+        IA[Standard-IA]
+        GI[Glacier Instant]
+        GF[Glacier Flexible]
+        GDA[Glacier Deep Archive]
+        DEL[Delete]
+    end
+    
+    S -->|30 days| IA
+    IA -->|60 days| GI
+    GI -->|90 days| GF
+    GF -->|180 days| GDA
+    GDA -->|365 days| DEL
+    
+    style S fill:#276749,stroke:#48bb78,color:#fff
+    style IA fill:#2c5282,stroke:#4299e1,color:#fff
+    style GI fill:#553c9a,stroke:#805ad5,color:#fff
+    style GF fill:#744210,stroke:#d69e2e,color:#fff
+    style GDA fill:#4a5568,stroke:#718096,color:#fff
+    style DEL fill:#9b2c2c,stroke:#fc8181,color:#fff
+```
+
 ## Bucket Policies
 
 Control access at the bucket level:
@@ -167,6 +194,28 @@ With SSE-C, you must provide the key with every request. Losing the key means lo
 ## Cross-Region Replication
 
 Replicate objects to another region for disaster recovery or compliance:
+
+```mermaid
+flowchart LR
+    subgraph Source["Source Region - us-east-1"]
+        SB[Source Bucket<br/>Versioning Enabled]
+    end
+    
+    subgraph Replication
+        RR[Replication Rule]
+    end
+    
+    subgraph Destination["Destination Region - eu-west-1"]
+        DB[Destination Bucket<br/>Versioning Enabled]
+    end
+    
+    SB -->|New/Updated Objects| RR
+    RR -->|Async Replication| DB
+    
+    style SB fill:#2c5282,stroke:#4299e1,color:#fff
+    style RR fill:#553c9a,stroke:#805ad5,color:#fff
+    style DB fill:#276749,stroke:#48bb78,color:#fff
+```
 
 ```json title="replication-config.json"
 {

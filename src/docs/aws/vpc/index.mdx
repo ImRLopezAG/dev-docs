@@ -5,6 +5,50 @@ description: Virtual Private Cloud - Isolated network for your AWS resources
 
 Amazon Virtual Private Cloud (VPC) lets you provision a logically isolated section of the AWS Cloud where you can launch resources in a virtual network.
 
+## VPC Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph Internet
+        IGW[Internet Gateway]
+    end
+    
+    subgraph VPC["VPC 10.0.0.0/16"]
+        subgraph Public["Public Subnets"]
+            PS1[Public Subnet 1<br/>10.0.1.0/24]
+            PS2[Public Subnet 2<br/>10.0.2.0/24]
+            NAT[NAT Gateway]
+        end
+        
+        subgraph Private["Private Subnets"]
+            PRS1[Private Subnet 1<br/>10.0.10.0/24]
+            PRS2[Private Subnet 2<br/>10.0.20.0/24]
+        end
+        
+        RT1[Public Route Table]
+        RT2[Private Route Table]
+    end
+    
+    IGW --> PS1
+    IGW --> PS2
+    PS1 --> NAT
+    NAT --> PRS1
+    NAT --> PRS2
+    RT1 --> PS1
+    RT1 --> PS2
+    RT2 --> PRS1
+    RT2 --> PRS2
+    
+    style IGW fill:#285e61,stroke:#38b2ac,color:#fff
+    style PS1 fill:#276749,stroke:#48bb78,color:#fff
+    style PS2 fill:#276749,stroke:#48bb78,color:#fff
+    style NAT fill:#744210,stroke:#d69e2e,color:#fff
+    style PRS1 fill:#553c9a,stroke:#805ad5,color:#fff
+    style PRS2 fill:#553c9a,stroke:#805ad5,color:#fff
+    style RT1 fill:#2d3748,stroke:#4a5568,color:#fff
+    style RT2 fill:#2d3748,stroke:#4a5568,color:#fff
+```
+
 ## Key Concepts
 
 ### VPC
@@ -97,6 +141,45 @@ Subnet-level firewall (stateless).
 | Rules | Allow only | Allow & Deny |
 | Evaluation | All rules | Rules in order |
 
+```mermaid
+flowchart LR
+    subgraph Traffic["Inbound Traffic"]
+        REQ[Request]
+    end
+    
+    subgraph NACL["Network ACL - Subnet Level"]
+        N1{Rule 100<br/>Allow?}
+        N2{Rule 110<br/>Allow?}
+        N3{Default<br/>Deny}
+    end
+    
+    subgraph SG["Security Group - Instance Level"]
+        S1{Port 443?}
+        S2{Port 80?}
+    end
+    
+    subgraph Instance
+        EC2[EC2 Instance]
+    end
+    
+    REQ --> N1
+    N1 -->|Yes| SG
+    N1 -->|No| N2
+    N2 -->|Yes| SG
+    N2 -->|No| N3
+    S1 -->|Yes| EC2
+    S1 -->|No| S2
+    S2 -->|Yes| EC2
+    
+    style REQ fill:#4a5568,stroke:#718096,color:#fff
+    style N1 fill:#2c5282,stroke:#4299e1,color:#fff
+    style N2 fill:#2c5282,stroke:#4299e1,color:#fff
+    style N3 fill:#9b2c2c,stroke:#fc8181,color:#fff
+    style S1 fill:#276749,stroke:#48bb78,color:#fff
+    style S2 fill:#276749,stroke:#48bb78,color:#fff
+    style EC2 fill:#553c9a,stroke:#805ad5,color:#fff
+```
+
 ## VPC Endpoints
 
 Access AWS services without internet:
@@ -127,11 +210,32 @@ aws ec2 create-vpc-endpoint \
 
 Connect two VPCs privately:
 
-```
-┌─────────────────┐         ┌─────────────────┐
-│  VPC A          │◀───────▶│  VPC B          │
-│  10.0.0.0/16    │ Peering │  10.1.0.0/16    │
-└─────────────────┘         └─────────────────┘
+```mermaid
+flowchart LR
+    subgraph VPCA["VPC A"]
+        A1[10.0.0.0/16]
+        RT1[Route Table A]
+    end
+    
+    subgraph Peering
+        PC[VPC Peering<br/>Connection]
+    end
+    
+    subgraph VPCB["VPC B"]
+        B1[10.1.0.0/16]
+        RT2[Route Table B]
+    end
+    
+    A1 --> RT1
+    RT1 <--> PC
+    PC <--> RT2
+    RT2 --> B1
+    
+    style A1 fill:#2c5282,stroke:#4299e1,color:#fff
+    style B1 fill:#276749,stroke:#48bb78,color:#fff
+    style PC fill:#553c9a,stroke:#805ad5,color:#fff
+    style RT1 fill:#2d3748,stroke:#4a5568,color:#fff
+    style RT2 fill:#2d3748,stroke:#4a5568,color:#fff
 ```
 
 Requirements:
@@ -156,15 +260,35 @@ Allow remote users to access VPC resources.
 
 Hub for connecting VPCs and on-premises networks:
 
-```
-        ┌─────────────────┐
-        │ Transit Gateway │
-        └────────┬────────┘
-    ┌────────────┼────────────┐
-    ▼            ▼            ▼
-┌───────┐   ┌───────┐   ┌───────────┐
-│ VPC A │   │ VPC B │   │ On-Prem   │
-└───────┘   └───────┘   └───────────┘
+```mermaid
+flowchart TB
+    subgraph TGW["Transit Gateway"]
+        HUB[Central Hub]
+    end
+    
+    subgraph VPCs["Connected VPCs"]
+        VPC1[VPC A<br/>10.0.0.0/16]
+        VPC2[VPC B<br/>10.1.0.0/16]
+        VPC3[VPC C<br/>10.2.0.0/16]
+    end
+    
+    subgraph OnPrem["On-Premises"]
+        DC[Data Center]
+        VPN[VPN Connection]
+    end
+    
+    VPC1 <--> HUB
+    VPC2 <--> HUB
+    VPC3 <--> HUB
+    DC --> VPN
+    VPN <--> HUB
+    
+    style HUB fill:#553c9a,stroke:#805ad5,color:#fff
+    style VPC1 fill:#2c5282,stroke:#4299e1,color:#fff
+    style VPC2 fill:#276749,stroke:#48bb78,color:#fff
+    style VPC3 fill:#744210,stroke:#d69e2e,color:#fff
+    style DC fill:#4a5568,stroke:#718096,color:#fff
+    style VPN fill:#285e61,stroke:#38b2ac,color:#fff
 ```
 
 ## Flow Logs
@@ -201,32 +325,40 @@ aws ec2 create-flow-logs \
 
 ## Reference Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ VPC: 10.0.0.0/16                                                │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │ Public Subnets                                            │   │
-│  │  ┌─────────────┐  ┌─────────────┐                        │   │
-│  │  │ ALB/NAT     │  │ ALB/NAT     │  ← Internet Gateway    │   │
-│  │  │ AZ-a        │  │ AZ-b        │                        │   │
-│  │  └─────────────┘  └─────────────┘                        │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │ Private Subnets                                           │   │
-│  │  ┌─────────────┐  ┌─────────────┐                        │   │
-│  │  │ EC2/ECS     │  │ EC2/ECS     │  ← App Layer           │   │
-│  │  │ AZ-a        │  │ AZ-b        │                        │   │
-│  │  └─────────────┘  └─────────────┘                        │   │
-│  │                                                           │   │
-│  │  ┌─────────────┐  ┌─────────────┐                        │   │
-│  │  │ RDS/Cache   │  │ RDS/Cache   │  ← Data Layer          │   │
-│  │  │ AZ-a        │  │ AZ-b        │                        │   │
-│  │  └─────────────┘  └─────────────┘                        │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Internet
+        IGW[Internet Gateway]
+    end
+    
+    subgraph VPC["VPC: 10.0.0.0/16"]
+        subgraph PublicLayer["Public Subnets"]
+            ALB[ALB / NAT]
+            ALB2[ALB / NAT]
+        end
+        
+        subgraph AppLayer["Private Subnets - App Layer"]
+            APP1[EC2/ECS AZ-a]
+            APP2[EC2/ECS AZ-b]
+        end
+        
+        subgraph DataLayer["Private Subnets - Data Layer"]
+            DB1[RDS/Cache AZ-a]
+            DB2[RDS/Cache AZ-b]
+        end
+    end
+    
+    IGW --> PublicLayer
+    PublicLayer --> AppLayer
+    AppLayer --> DataLayer
+    
+    style IGW fill:#285e61,stroke:#38b2ac,color:#fff
+    style ALB fill:#276749,stroke:#48bb78,color:#fff
+    style ALB2 fill:#276749,stroke:#48bb78,color:#fff
+    style APP1 fill:#2c5282,stroke:#4299e1,color:#fff
+    style APP2 fill:#2c5282,stroke:#4299e1,color:#fff
+    style DB1 fill:#553c9a,stroke:#805ad5,color:#fff
+    style DB2 fill:#553c9a,stroke:#805ad5,color:#fff
 ```
 
 ## Next Steps

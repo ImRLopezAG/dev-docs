@@ -8,6 +8,7 @@ The `SELECT` statement is the most frequently used SQL command. It retrieves dat
 ## Anatomy of a SELECT Statement
 
 ```mermaid
+
 flowchart TB
     subgraph SELECT["SELECT Clause"]
         A[Columns to return]
@@ -15,7 +16,7 @@ flowchart TB
         C[Aliases]
     end
     subgraph FROM["FROM Clause"]
-        D[Source table(s)]
+        D["Source table(s)"]
         E[JOINs]
     end
     subgraph WHERE["WHERE Clause"]
@@ -32,6 +33,7 @@ flowchart TB
     end
     
     SELECT --> FROM --> WHERE --> ORDER --> LIMIT
+    
 ```
 
 ## Basic SELECT Syntax
@@ -97,6 +99,7 @@ The `WHERE` clause filters rows based on conditions.
 ### Comparison Operators
 
 ```mermaid
+
 flowchart LR
     subgraph Operators
         A["= (equals)"]
@@ -106,6 +109,7 @@ flowchart LR
         E[">= (greater or equal)"]
         F["<= (less or equal)"]
     end
+    
 ```
 
 <Tabs items={['Equality', 'Comparison', 'Range', 'List']}>
@@ -174,9 +178,11 @@ WHERE category_id IN (
 ### Pattern Matching with LIKE
 
 ```mermaid
+
 flowchart LR
     A["%"] --> B["Matches any sequence<br/>(zero or more characters)"]
     C["_"] --> D["Matches exactly<br/>one character"]
+    
 ```
 
 <Tabs items={['Wildcards', 'Examples', 'Case Sensitivity']}>
@@ -236,10 +242,12 @@ SELECT * FROM products WHERE name LIKE 'mac%';
 `NULL` represents missing or unknown values. It requires special handling.
 
 ```mermaid
+
 flowchart TD
     A["NULL is NOT a value"] --> B["NULL = NULL is FALSE"]
     A --> C["NULL <> NULL is FALSE"]
     A --> D["Use IS NULL / IS NOT NULL"]
+    
 ```
 
 <Tabs items={['IS NULL', 'IS NOT NULL', 'COALESCE']}>
@@ -291,6 +299,7 @@ FROM contacts;
 Combine multiple conditions with `AND`, `OR`, and `NOT`.
 
 ```mermaid
+
 flowchart TD
     subgraph AND["AND (Both must be true)"]
         A1[Condition 1: TRUE] --> R1[Result: TRUE]
@@ -303,6 +312,7 @@ flowchart TD
     subgraph NOT["NOT (Inverts condition)"]
         C1[Condition: TRUE] --> R3[Result: FALSE]
     end
+    
 ```
 
 <Tabs items={['AND', 'OR', 'Complex Conditions']}>
@@ -468,10 +478,12 @@ LIMIT 10 OFFSET 20;
 ```
 
 ```mermaid
+
 flowchart LR
     subgraph "OFFSET/LIMIT Pagination"
         A["Page 1<br/>OFFSET 0"] --> B["Page 2<br/>OFFSET 10"] --> C["Page 3<br/>OFFSET 20"]
     end
+    
 ```
 
 <Callout type="warn" title="Performance Warning">

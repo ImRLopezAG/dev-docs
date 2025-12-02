@@ -50,9 +50,7 @@ const clientLoader = browserCollections.docs.createClientLoader({
 				<DocsTitle>{frontmatter.title}</DocsTitle>
 				<DocsDescription>{frontmatter.description}</DocsDescription>
 				<DocsBody>
-					<MDX components={getMDXComponents({
-
-					})} />
+					<MDX components={getMDXComponents({})} />
 				</DocsBody>
 			</DocsPage>
 		)

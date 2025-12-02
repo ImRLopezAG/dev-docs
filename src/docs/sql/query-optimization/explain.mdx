@@ -113,6 +113,7 @@ Execution Time: 0.032 ms
 ### Key Components
 
 ```mermaid
+
 flowchart TB
     subgraph "EXPLAIN Output"
         N[Node Type<br/>Index Scan, Seq Scan, etc.]
@@ -123,6 +124,7 @@ flowchart TB
         L[Loops<br/>Times executed]
         B[Buffers<br/>Memory/disk access]
     end
+    
 ```
 
 <Tabs items={['Cost', 'Rows', 'Actual', 'Buffers']}>
@@ -236,6 +238,7 @@ Buffers: shared hit=3 read=2 dirtied=0 written=0
 ## Common Node Types
 
 ```mermaid
+
 flowchart TB
     subgraph "Scan Nodes"
         SS[Seq Scan<br/>Full table scan]
@@ -256,6 +259,7 @@ flowchart TB
         LIM[Limit]
         AP[Append]
     end
+    
 ```
 
 ### Scan Types
@@ -350,9 +354,11 @@ Nested Loop  (cost=0.42..100.00 rows=100 width=96) -- [!code highlight]
 ```
 
 ```mermaid
+
 flowchart LR
     O[Outer Table] --> |"For each row"| I[Inner Table]
     I --> |"Find matches"| R[Result]
+    
 ```
 
 **How it works:** For each row in outer table, scan inner table.
@@ -374,11 +380,13 @@ Hash Join  (cost=10.00..200.00 rows=1000 width=96) -- [!code highlight]
 ```
 
 ```mermaid
+
 flowchart LR
     S[Smaller Table] --> H[Build Hash Table]
     L[Larger Table] --> P[Probe Hash Table]
     H --> P
     P --> R[Result]
+    
 ```
 
 **How it works:**
@@ -401,12 +409,14 @@ Merge Join  (cost=100.00..200.00 rows=1000 width=96) -- [!code highlight]
 ```
 
 ```mermaid
+
 flowchart LR
     T1[Table 1] --> S1[Sort]
     T2[Table 2] --> S2[Sort]
     S1 --> M[Merge]
     S2 --> M
     M --> R[Result]
+    
 ```
 
 **How it works:**
@@ -447,6 +457,7 @@ Sort  (cost=100..110 rows=100)
 ### Cost Accumulation
 
 ```mermaid
+
 flowchart TB
     subgraph "Cost Flow"
         A[Inner Scan: 20] --> B[Hash Build: 25]
@@ -454,6 +465,7 @@ flowchart TB
         C --> D[Hash Join: 80]
         D --> E[Sort: 110]
     end
+    
 ```
 
 Parent node cost includes child costs.

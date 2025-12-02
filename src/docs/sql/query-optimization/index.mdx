@@ -8,6 +8,7 @@ Query optimization is the art and science of writing SQL that executes efficient
 ## How Query Processing Works
 
 ```mermaid
+
 flowchart LR
     Q[SQL Query] --> P[Parser]
     P --> R[Rewriter]
@@ -15,6 +16,7 @@ flowchart LR
     O --> E[Executor]
     E --> D[Data]
     D --> Result[Results]
+    
 ```
 
 <Steps>
@@ -48,6 +50,7 @@ The chosen plan is executed, accessing data through the most efficient path.
 ## The Optimizer's Decision Process
 
 ```mermaid
+
 flowchart TB
     Q[Query] --> Stats[Check Statistics]
     Stats --> Paths[Generate Access Paths]
@@ -75,6 +78,7 @@ flowchart TB
     Choose --> J1
     Choose --> J2
     Choose --> J3
+    
 ```
 
 ## Quick Reference: Optimization Checklist

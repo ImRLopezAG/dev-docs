@@ -8,6 +8,7 @@ B-Tree (Balanced Tree) indexes are the default and most versatile index type in 
 ## B-Tree Structure
 
 ```mermaid
+
 flowchart TB
     subgraph "B-Tree Index Structure"
         R[Root Page<br/>Keys: 50, 100]
@@ -35,6 +36,7 @@ flowchart TB
         L2 --> LL5
         L2 --> LL6
     end
+    
 ```
 
 ### Key Properties
@@ -50,6 +52,7 @@ flowchart TB
 | **Pointers** | References to child pages or table rows |
 
 ```mermaid
+
 flowchart LR
     subgraph "Leaf Page Structure"
         K1[Key 1] --> P1[Row Pointer 1]
@@ -57,12 +60,14 @@ flowchart LR
         K3[Key 3] --> P3[Row Pointer 3]
         K3 --> N[Next Leaf →]
     end
+    
 ```
 </Tab>
 <Tab value="Operations">
 ### Search Operation
 
 ```mermaid
+
 sequenceDiagram
     participant Q as Query
     participant R as Root
@@ -119,10 +124,12 @@ SELECT * FROM users WHERE id = 12345;
 ```
 
 ```mermaid
+
 flowchart LR
     R[Root: 10000] --> |"12345 > 10000"| I[Internal: 12000]
     I --> |"12345 > 12000"| L[Leaf: 12300-12400]
     L --> |Find 12345| D[Data Row]
+    
 ```
 
 ### Range Scan
@@ -134,6 +141,7 @@ WHERE created_at BETWEEN '2024-01-01' AND '2024-01-31';
 ```
 
 ```mermaid
+
 flowchart LR
     subgraph "Range Scan"
         S[Find Start:<br/>2024-01-01] --> L1[Leaf 1]
@@ -141,6 +149,7 @@ flowchart LR
         L2 --> |"Next →"| L3[Leaf 3]
         L3 --> E[Stop at:<br/>2024-01-31]
     end
+    
 ```
 
 <Callout type="info" title="Leaf Page Linking">
@@ -171,9 +180,11 @@ SELECT * FROM orders WHERE customer_id = 123;
 ```
 
 ```mermaid
+
 flowchart LR
     I[Index] --> |"Find entries"| P[Row Pointers]
     P --> |"Fetch rows"| T[Table Data]
+    
 ```
 
 **When used:**
@@ -195,8 +206,10 @@ SELECT total, status FROM orders WHERE customer_id = 123;
 ```
 
 ```mermaid
+
 flowchart LR
     I[Index] --> |"All data in index"| R[Result]
+    
 ```
 
 **Benefits:**
@@ -220,6 +233,7 @@ WHERE status = 'active' OR customer_id IN (1, 2, 3);
 ```
 
 ```mermaid
+
 flowchart TB
     I1[Index 1] --> B1[Bitmap 1]
     I2[Index 2] --> B2[Bitmap 2]
@@ -227,6 +241,7 @@ flowchart TB
     B2 --> OR
     OR --> H[Heap Scan]
     H --> R[Results]
+    
 ```
 
 **When used:**
@@ -260,6 +275,7 @@ CREATE INDEX idx_orders ON orders(status, created_at, customer_id);
 ```
 
 ```mermaid
+
 flowchart TB
     subgraph "Index Structure"
         R[Root]
@@ -274,6 +290,7 @@ flowchart TB
         A1 --> A1C1[active, 2024-01-01, cust_1]
         A1 --> A1C2[active, 2024-01-01, cust_2]
     end
+    
 ```
 
 ### Usable Query Patterns

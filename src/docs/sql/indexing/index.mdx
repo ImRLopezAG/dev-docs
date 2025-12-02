@@ -8,6 +8,7 @@ Indexes are database structures that improve query performance by allowing faste
 ## How Indexes Work
 
 ```mermaid
+
 flowchart LR
     subgraph "Without Index (Full Table Scan)"
         T1[Row 1] --> T2[Row 2]
@@ -22,6 +23,7 @@ flowchart LR
         I --> L3[Leaf 3]
         L2 --> R[Target Row]
     end
+    
 ```
 
 **Without an index**, the database performs a full table scan—checking every row.
@@ -101,6 +103,7 @@ ON orders(created_at DESC);
 B-Tree (Balanced Tree) is the default and most common index type:
 
 ```mermaid
+
 flowchart TB
     R[Root Node<br/>50] --> L1[Left Child<br/>25]
     R --> L2[Right Child<br/>75]
@@ -112,6 +115,7 @@ flowchart TB
     LL2 --> D2[Data Pages]
     RL1 --> D3[Data Pages]
     RL2 --> D4[Data Pages]
+    
 ```
 
 <Callout type="info" title="B-Tree Properties">
@@ -126,6 +130,7 @@ flowchart TB
 The order of columns in a composite index is crucial:
 
 ```mermaid
+
 flowchart LR
     subgraph "Index: (status, created_at)"
         A[active, 2024-01-01]
@@ -134,6 +139,7 @@ flowchart LR
         D[inactive, 2024-01-01]
         E[inactive, 2024-01-02]
     end
+    
 ```
 
 ```sql

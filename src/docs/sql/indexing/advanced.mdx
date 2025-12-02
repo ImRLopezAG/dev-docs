@@ -10,6 +10,7 @@ Beyond basic B-Tree and specialized indexes, databases offer advanced indexing t
 Partial indexes index only a subset of rows, based on a WHERE condition.
 
 ```mermaid
+
 flowchart LR
     subgraph "Full Index"
         F[All Rows<br/>100% of table]
@@ -18,6 +19,7 @@ flowchart LR
         P[Subset of Rows<br/>Only matching condition]
     end
     F --> |"Filter: WHERE active = true"| P
+    
 ```
 
 <Tabs items={['Basics', 'Common Patterns', 'Benefits']}>
@@ -104,6 +106,7 @@ Smaller index = faster scans, better cache utilization.
 Covering indexes include additional columns that aren't part of the index key, enabling index-only scans.
 
 ```mermaid
+
 flowchart LR
     subgraph "Index Scan"
         I[Index] --> |"Get row pointer"| T[Table]
@@ -112,6 +115,7 @@ flowchart LR
     subgraph "Index-Only Scan"
         IC[Covering Index] --> RC[Result]
     end
+    
 ```
 
 <Tabs items={['PostgreSQL', 'SQL Server', 'When to Use']}>
@@ -284,6 +288,7 @@ ON users((first_name || ' ' || last_name));
 ## Multi-Column Index Strategies
 
 ```mermaid
+
 flowchart TB
     subgraph "Index Column Order"
         C1[Column 1: Most selective<br/>or most commonly filtered]
@@ -292,6 +297,7 @@ flowchart TB
         C4[Column 4: ORDER BY column]
     end
     C1 --> C2 --> C3 --> C4
+    
 ```
 
 <Steps>

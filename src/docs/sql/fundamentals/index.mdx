@@ -14,6 +14,7 @@ The SQL fundamentals covered here work across PostgreSQL, MySQL, and SQL Server 
 When you execute a SQL query, the database follows a specific order of operations—different from how you write the query:
 
 ```mermaid
+
 flowchart LR
     A[FROM] --> B[WHERE]
     B --> C[GROUP BY]
@@ -21,6 +22,7 @@ flowchart LR
     D --> E[SELECT]
     E --> F[ORDER BY]
     F --> G[LIMIT]
+    
 ```
 
 Understanding this execution order helps you write better queries and debug issues:
@@ -55,6 +57,8 @@ You cannot use column aliases from SELECT in WHERE because WHERE is evaluated be
 ## SQL Statement Categories
 
 ```mermaid
+
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#2c5282', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#2c5282', 'lineColor': '#4a5568', 'secondaryColor': '#553c9a', 'tertiaryColor': '#285e61'}}}%%
 mindmap
   root((SQL))
     DQL
@@ -143,6 +147,7 @@ REVOKE DELETE ON users FROM app_user;
 Throughout this documentation, we'll use this sample e-commerce schema:
 
 ```mermaid
+
 erDiagram
     CUSTOMERS ||--o{ ORDERS : places
     CUSTOMERS {

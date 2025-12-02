@@ -8,6 +8,7 @@ Common Table Expressions (CTEs) are named temporary result sets that exist withi
 ## CTE Structure
 
 ```mermaid
+
 flowchart LR
     subgraph "WITH Clause"
         CTE1[CTE 1: base_data]
@@ -18,6 +19,7 @@ flowchart LR
     CTE2 --> CTE3
     CTE3 --> MAIN[Main Query]
     MAIN --> RESULT[Final Result]
+    
 ```
 
 ## Basic CTE Syntax
@@ -119,10 +121,12 @@ SELECT * FROM ranked_customers WHERE spending_rank <= 10;
 ```
 
 ```mermaid
+
 flowchart TB
     A[raw_orders<br/>Filter current month] --> B[customer_totals<br/>Aggregate by customer]
     B --> C[ranked_customers<br/>Rank by spending]
     C --> D[Final: Top 10]
+    
 ```
 </Tab>
 </Tabs>
@@ -191,6 +195,7 @@ WHERE c.id IN (SELECT customer_id FROM high_value_orders);
 Recursive CTEs can reference themselves, enabling hierarchical and graph traversals.
 
 ```mermaid
+
 flowchart TD
     subgraph "Recursive CTE Structure"
         A[Anchor Member<br/>Base case] --> U[UNION ALL]
@@ -198,6 +203,7 @@ flowchart TD
         R --> |Loop until empty| U
     end
     U --> F[Final Result]
+    
 ```
 
 <Tabs items={['Syntax', 'Hierarchy', 'Number Series', 'Date Series', 'Graph Traversal']}>
@@ -365,6 +371,7 @@ ORDER BY total_weight;
 ```
 
 ```mermaid
+
 graph LR
     A((A)) --> B((B))
     A --> C((C))
@@ -372,6 +379,7 @@ graph LR
     C --> D
     D --> Z((Z))
     B --> Z
+    
 ```
 </Tab>
 </Tabs>
