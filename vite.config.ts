@@ -10,6 +10,7 @@ import { defineConfig, type Plugin } from 'vite'
 import tsConfigPaths from 'vite-tsconfig-paths'
 import * as MdxConfig from './source.config'
 
+const FumadocsDeps = ['fumadocs-core', 'fumadocs-ui'];
 export default defineConfig({
 	json: {
 		stringify: false,
@@ -30,7 +31,10 @@ export default defineConfig({
 			prerender: {
 				enabled: false,
 			},
-
+			sitemap: {
+				enabled: true,
+				host: 'https://docs.imrlopez.dev',
+			},
 			router: {
 				routesDirectory: 'app',
 			},
@@ -38,6 +42,12 @@ export default defineConfig({
 		react(),
 		jsonQueryFallbackPlugin(),
 	],
+	resolve: {
+		noExternal: FumadocsDeps,
+	},
+	optimizeDeps: {
+		exclude: FumadocsDeps,
+	},
 })
 
 /**

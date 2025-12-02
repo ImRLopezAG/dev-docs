@@ -5,8 +5,11 @@ import { routeTree } from './routeTree.gen'
 export function getRouter() {
 	return createTanStackRouter({
 		routeTree,
-		defaultPreload: 'intent',
+		defaultPreload: 'viewport',
 		scrollRestoration: true,
 		defaultNotFoundComponent: NotFound,
+		defaultStructuralSharing: true,
+		scrollRestorationBehavior: "smooth",
+		defaultPreloadDelay: 100,
 	})
 }

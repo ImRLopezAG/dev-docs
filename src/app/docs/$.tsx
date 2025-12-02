@@ -12,16 +12,17 @@ import {
 import { useMemo } from 'react'
 import { getMDXComponents } from '@/components/mdx/mdx-components'
 import { baseOptions } from '@/lib/layout.shared'
+import { seo } from '@/lib/seo'
 import { source } from '@/lib/source'
-
 export const Route = createFileRoute('/docs/$')({
 	component: Page,
 	loader: async ({ params }) => {
 		const slugs = params._splat?.split('/') ?? []
 		const data = await loader({ data: slugs })
+		if (!data) throw notFound()
 		await clientLoader.preload(data.path)
 		return data
-	},
+	}
 })
 
 const loader = createServerFn({
