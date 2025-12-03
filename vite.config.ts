@@ -14,7 +14,6 @@ const FumadocsDeps = ['fumadocs-core', 'fumadocs-ui'];
 export default defineConfig({
 	json: {
 		stringify: false,
-		namedExports: false,
 	},
 	server: {
 		port: 3000,
@@ -31,6 +30,16 @@ export default defineConfig({
 			prerender: {
 				enabled: false,
 			},
+			
+
+      pages: [
+        {
+          path: '/docs',
+        },
+        {
+          path: '/api/search',
+        },
+      ],
 			sitemap: {
 				enabled: true,
 				host: 'https://docs.imrlopez.dev',
@@ -60,16 +69,20 @@ export default defineConfig({
  */
 function jsonQueryPlugin(): Plugin {
 	const root = cwd()
+	const fileStatus = new Map<string, string>()
+
+	const logStatus = (fileName: string, status: string) => {
+		fileStatus.set(fileName, status)
+		console.log(`[query] ${fileName} - ${status}`)
+	}
 
 	return {
 		name: 'json-query-handler',
 		enforce: 'pre',
 		resolveId(id, importer) {
-			// Handle JSON files with query parameters
 			if (id.includes('.json?') && id.includes('collection=')) {
 				const [relativePath, query] = id.split('?')
 
-				// Resolve the path relative to the importer or root
 				let absolutePath: string
 				if (relativePath.startsWith('/')) {
 					absolutePath = relativePath
@@ -79,24 +92,24 @@ function jsonQueryPlugin(): Plugin {
 					absolutePath = resolve(root, relativePath)
 				}
 
-				// Return the absolute path with query - let fumadocs-mdx handle transformation
+				logStatus(absolutePath, 'resolved')
 				return `${absolutePath}?${query}`
 			}
 			return null
 		},
 		load(id) {
-			// Only handle JSON files with collection query params
 			if (id.includes('.json?') && id.includes('collection=')) {
 				const [filePath] = id.split('?')
 
 				try {
 					if (existsSync(filePath)) {
-						// Return raw JSON content - fumadocs-mdx transform will handle it
 						const content = readFileSync(filePath, 'utf-8')
+						logStatus(filePath, 'loaded')
 						return content
 					}
+					logStatus(filePath, 'not-found')
 				} catch {
-					// Fall through to return null
+					logStatus(filePath, 'load-error')
 				}
 				return null
 			}
@@ -110,23 +123,26 @@ function jsonQueryPlugin(): Plugin {
  * This runs after fumadocs-mdx transform and catches any JSON that wasn't handled
  */
 function jsonQueryFallbackPlugin(): Plugin {
+	const logStatus = (fileName: string, status: string) => {
+		console.log(`[fallback] ${fileName} - ${status}`)
+	}
+
 	return {
 		name: 'json-query-fallback',
 		enforce: 'post',
 		transform(code, id) {
-			// Only process JSON files with collection query that are still raw JSON
 			if (id.includes('.json?') && id.includes('collection=')) {
-				// Check if the code is still raw JSON (starts with { and isn't already a module)
 				const trimmed = code.trim()
 				if (trimmed.startsWith('{') && !trimmed.startsWith('export ')) {
 					try {
-						// Validate it's valid JSON
 						const json = JSON.parse(trimmed)
-						// Convert to ES module export
+						logStatus(id, 'transformed')
 						return `export default ${JSON.stringify(json)};`
 					} catch {
-						// Not valid JSON, pass through
+						logStatus(id, 'parse-error')
 					}
+				} else {
+					logStatus(id, 'skipped')
 				}
 			}
 			return null

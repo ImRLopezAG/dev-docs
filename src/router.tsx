@@ -10,6 +10,6 @@ export function getRouter() {
 		defaultNotFoundComponent: NotFound,
 		defaultStructuralSharing: true,
 		scrollRestorationBehavior: "smooth",
-		defaultPreloadDelay: 100,
+		defaultPreloadDelay: 10,
 	})
 }
