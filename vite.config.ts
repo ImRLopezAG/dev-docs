@@ -29,17 +29,9 @@ export default defineConfig({
 		tanstackStart({
 			prerender: {
 				enabled: false,
+				crawlLinks: true,
+				outputPath:'index.html'
 			},
-			
-
-      pages: [
-        {
-          path: '/docs',
-        },
-        {
-          path: '/api/search',
-        },
-      ],
 			sitemap: {
 				enabled: true,
 				host: 'https://docs.imrlopez.dev',
