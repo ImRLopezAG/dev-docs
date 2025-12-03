@@ -7,7 +7,7 @@ export const Route = createFileRoute('/_ui')({
 
 function Home() {
 	return (
-		<HomeLayout {...baseOptions()} className='justify-center pb-32 text-center'>
+		<HomeLayout {...baseOptions()} className='justify-center text-center'>
 			<Outlet />
 		</HomeLayout>
 	)

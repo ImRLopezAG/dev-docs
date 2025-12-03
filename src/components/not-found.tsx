@@ -5,9 +5,9 @@ export function NotFound() {
 	return (
 		<HomeLayout
 			nav={{
-				title: 'Tanstack Start',
+				title: 'Dev Docs - 404',
 			}}
-			className='justify-center py-32 text-center'
+			className='justify-center text-center'
 		>
 			<div className='flex flex-col items-center gap-4'>
 				<h1 className='font-bold text-6xl text-fd-muted-foreground'>404</h1>

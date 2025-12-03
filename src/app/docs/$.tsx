@@ -14,7 +14,6 @@ import { getMDXComponents } from '@/components/mdx/mdx-components'
 import { baseOptions } from '@/lib/layout.shared'
 import { seo } from '@/lib/seo'
 import { source } from '@/lib/source'
-import { staticFunctionMiddleware } from '@tanstack/start-static-server-functions';
 export const Route = createFileRoute('/docs/$')({
 	component: Page,
 	loader: async ({ params }) => {
@@ -30,7 +29,6 @@ const loader = createServerFn({
 	method: 'GET',
 })
 	.inputValidator((slugs: string[]) => slugs)
-	.middleware([staticFunctionMiddleware])
 	.handler(async ({ data: slugs }) => {
 		const page = source.getPage(slugs);
 		if (!page) throw notFound();

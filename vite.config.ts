@@ -8,6 +8,7 @@ import mdx from 'fumadocs-mdx/vite'
 import { nitro } from 'nitro/vite'
 import { defineConfig, type Plugin } from 'vite'
 import tsConfigPaths from 'vite-tsconfig-paths'
+import * as MdxConfig from './source.config'
 
 const FumadocsDeps = ['fumadocs-core', 'fumadocs-ui'];
 export default defineConfig({
@@ -18,7 +19,7 @@ export default defineConfig({
 		port: 3000,
 	},
 	plugins: [
-		mdx(await import('./source.config')),
+		mdx(MdxConfig),
 		nitro({}),
 		jsonQueryPlugin(),
 		tailwindcss(),
@@ -28,14 +29,25 @@ export default defineConfig({
 		tanstackStart({
 			prerender: {
 				enabled: false,
+				crawlLinks: true,
+				outputPath:'index.html'
 			},
+			
+
+      pages: [
+        {
+          path: '/docs',
+        },
+        {
+          path: '/api/search',
+        },
+      ],
 			sitemap: {
 				enabled: true,
 				host: 'https://docs.imrlopez.dev',
 			},
 			router: {
 				routesDirectory: 'app',
-				semicolons: true
 			},
 		}),
 		react(),
