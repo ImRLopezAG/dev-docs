@@ -8,7 +8,6 @@ import mdx from 'fumadocs-mdx/vite'
 import { nitro } from 'nitro/vite'
 import { defineConfig, type Plugin } from 'vite'
 import tsConfigPaths from 'vite-tsconfig-paths'
-import * as MdxConfig from './source.config'
 
 const FumadocsDeps = ['fumadocs-core', 'fumadocs-ui'];
 export default defineConfig({
@@ -19,7 +18,7 @@ export default defineConfig({
 		port: 3000,
 	},
 	plugins: [
-		mdx(MdxConfig),
+		mdx(await import('./source.config')),
 		nitro({}),
 		jsonQueryPlugin(),
 		tailwindcss(),
