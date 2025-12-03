@@ -29,8 +29,6 @@ export default defineConfig({
 		tanstackStart({
 			prerender: {
 				enabled: false,
-				crawlLinks: true,
-				outputPath:'index.html'
 			},
 			sitemap: {
 				enabled: true,
@@ -38,6 +36,7 @@ export default defineConfig({
 			},
 			router: {
 				routesDirectory: 'app',
+				semicolons: true
 			},
 		}),
 		react(),
