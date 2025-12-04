@@ -1,3 +1,4 @@
+'use client'
 import { HomeLayout } from 'fumadocs-ui/layouts/home'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 
@@ -6,8 +7,7 @@ interface ErrorBoundaryProps {
 	reset: () => void
 }
 
-export function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
-	const isDev = process.env.NODE_ENV === 'development'
+export default function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
 
 	const createGithubIssue = () => {
 		const title = encodeURIComponent(`Error: ${error.message}`)
@@ -69,19 +69,6 @@ ${error.stack || 'No stack trace available'}
 							</p>
 						</div>
 					</div>
-
-					{isDev && error.stack && (
-						<div>
-							<h2 className='mb-2 font-semibold text-gray-700 text-sm'>
-								Stack Trace
-							</h2>
-							<div className='max-h-64 overflow-auto rounded-md bg-gray-900 p-4'>
-								<pre className='font-mono text-gray-100 text-xs'>
-									{error.stack}
-								</pre>
-							</div>
-						</div>
-					)}
 
 					<div className='rounded-md border border-yellow-200 bg-yellow-50 p-4'>
 						<p className='text-sm text-yellow-800'>
