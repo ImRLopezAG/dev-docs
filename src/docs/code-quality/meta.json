@@ -1,0 +1,12 @@
+{
+	"title": "Code Architecture",
+	"description": "Software Architecture, Design Patterns, and Infrastructure as Code",
+	"icon": "Code",
+	"root": true,
+	"pages": [
+		"index",
+		"---Code Style---",
+		"patterns",
+		"principles"
+	]
+}

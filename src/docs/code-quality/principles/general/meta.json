@@ -1,0 +1,13 @@
+{
+	"title": "General Principles",
+	"description": "Fundamental software design principles for writing maintainable, scalable code",
+	"icon": "Bolt",
+	"pages": [
+		"dry",
+		"kiss",
+		"yagni",
+		"lod",
+		"composition",
+		"tell-dont-ask"
+	]
+}

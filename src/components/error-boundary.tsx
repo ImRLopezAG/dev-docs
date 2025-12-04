@@ -7,7 +7,7 @@ interface ErrorBoundaryProps {
 }
 
 export function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
-	const isDev = import.meta.env.DEV
+	const isDev = process.env.NODE_ENV === 'development'
 
 	const createGithubIssue = () => {
 		const title = encodeURIComponent(`Error: ${error.message}`)
