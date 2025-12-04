@@ -3,5 +3,10 @@
 	"description": "Comprehensive guides and documentation to help you start working with our platform as quickly as possible.",
 	"icon": "BookOpen",
 	"root": true,
-	"pages": ["index", "architecture", "aws", "sql"]
+	"pages": [
+		"index",
+		"aws",
+		"code-quality",
+		"sql"
+	]
 }

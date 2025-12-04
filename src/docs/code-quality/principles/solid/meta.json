@@ -1,0 +1,12 @@
+{
+	"title": "Solid Principles",
+	"description": "Fundamental software design principles for writing maintainable, scalable code",
+	"icon": "Lightbulb",
+	"pages": [
+		"srp",
+		"ocp",
+		"lsp",
+		"isp",
+		"dip"
+	]
+}
