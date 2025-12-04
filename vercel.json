@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "NODE_OPTIONS='--max-old-space-size=7168' next build",
+  "framework": "nextjs",
+  "bunVersion": "1.x"
+}
