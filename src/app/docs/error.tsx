@@ -8,7 +8,6 @@ interface ErrorBoundaryProps {
 }
 
 export default function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
-
 	const createGithubIssue = () => {
 		const title = encodeURIComponent(`Error: ${error.message}`)
 		const body = encodeURIComponent(`## Error Details
@@ -46,7 +45,6 @@ ${error.stack || 'No stack trace available'}
 			nav={{
 				title: 'Dev Docs - Error',
 			}}
-			className='justify-center text-center'
 		>
 			<div className='w-full max-w-2xl rounded-lg border border-red-200 bg-white shadow-lg'>
 				<div className='border-red-200 border-b bg-red-50 px-6 py-4'>
