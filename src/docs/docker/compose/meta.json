@@ -1,0 +1,12 @@
+{
+  "title": "Docker Compose",
+  "description": "Orchestrating multi-container applications with Docker Compose",
+  "icon": "Layers",
+  "pages": [
+    "index",
+    "services",
+    "networking",
+    "volumes",
+    "environment"
+  ]
+}

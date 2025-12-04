@@ -1,0 +1,1093 @@
+---
+title: Deployment Strategies
+description: Kubernetes, serverless, and hybrid deployment patterns for scalable infrastructure with zero-downtime releases.
+---
+
+import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { File, Files, Folder } from 'fumadocs-ui/components/files';
+import { Steps } from 'fumadocs-ui/components/steps';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+# Deployment Strategies
+
+Deploy services using **Kubernetes**, **serverless**, or **hybrid** approaches with zero-downtime releases, automatic scaling, and multi-region support.
+
+<Callout type="info">
+Choose deployment strategy based on workload characteristics: Kubernetes for stateful/long-running services, serverless for event-driven/bursty workloads.
+</Callout>
+
+## Deployment Overview
+
+```mermaid
+graph TB
+    subgraph Source["Source"]
+        Code["Code Repository"]
+        Registry["Container Registry"]
+    end
+
+    subgraph Strategies["Deployment Strategies"]
+        K8s["Kubernetes"]
+        Serverless["Serverless"]
+        Edge["Edge Functions"]
+    end
+
+    subgraph Targets["Deployment Targets"]
+        EKS["AWS EKS"]
+        GKE["Google GKE"]
+        Lambda["AWS Lambda"]
+        CF["Cloudflare Workers"]
+        Vercel["Vercel"]
+    end
+
+    subgraph Traffic["Traffic Management"]
+        ALB["Load Balancer"]
+        Ingress["Ingress Controller"]
+        CDN["CDN / Edge"]
+    end
+
+    Code --> Registry
+    Registry --> K8s & Serverless & Edge
+    K8s --> EKS & GKE
+    Serverless --> Lambda
+    Edge --> CF & Vercel
+    
+    EKS & GKE --> Ingress --> ALB
+    Lambda & CF & Vercel --> CDN
+```
+
+## Infrastructure Structure
+
+<Files>
+  <Folder name="infra" defaultOpen>
+    <File name="docker-compose.yml" />
+    <Folder name="kubernetes" defaultOpen>
+      <File name="kustomization.yaml" />
+      <Folder name="base">
+        <File name="namespace.yaml" />
+        <File name="configmap.yaml" />
+        <File name="secrets.yaml" />
+      </Folder>
+      <Folder name="services">
+        <File name="order-service.yaml" />
+        <File name="payment-service.yaml" />
+        <File name="api-gateway.yaml" />
+      </Folder>
+      <Folder name="overlays">
+        <Folder name="staging" />
+        <Folder name="production" />
+      </Folder>
+    </Folder>
+    <Folder name="serverless">
+      <File name="serverless.yml" />
+      <Folder name="functions" />
+    </Folder>
+    <Folder name="terraform">
+      <File name="main.tf" />
+      <File name="variables.tf" />
+      <Folder name="modules" />
+    </Folder>
+    <Folder name="environments">
+      <File name="staging.env" />
+      <File name="production.env" />
+    </Folder>
+  </Folder>
+</Files>
+
+---
+
+## Kubernetes Deployments
+
+### Base Service Configuration
+
+```yaml title="infra/kubernetes/services/order-service.yaml"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  labels:
+    app: order-service
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: order-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: order-service
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: order-service
+      containers:
+        - name: order-service
+          image: ghcr.io/org/order-service:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+            - name: grpc
+              containerPort: 50051
+            - name: metrics
+              containerPort: 9090
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3000"
+            - name: GRPC_PORT
+              value: "50051"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: order-service-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: shared-config
+                  key: redis-url
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: http
+            initialDelaySeconds: 0
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: order-service
+                topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: order-service
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  labels:
+    app: order-service
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: grpc
+      port: 50051
+      targetPort: grpc
+  selector:
+    app: order-service
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: order-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: order-service
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: 1000
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max
+```
+
+### Kustomize Overlays
+
+<Tabs items={['Base', 'Staging', 'Production']}>
+<Tab value="Base">
+```yaml title="infra/kubernetes/base/kustomization.yaml"
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - ../services/order-service.yaml
+  - ../services/payment-service.yaml
+  - ../services/api-gateway.yaml
+
+commonLabels:
+  app.kubernetes.io/managed-by: kustomize
+  app.kubernetes.io/part-of: platform
+
+configMapGenerator:
+  - name: shared-config
+    literals:
+      - LOG_LEVEL=info
+      - TRACING_ENABLED=true
+```
+</Tab>
+<Tab value="Staging">
+```yaml title="infra/kubernetes/overlays/staging/kustomization.yaml"
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-staging
+
+resources:
+  - ../../base
+
+namePrefix: staging-
+
+commonLabels:
+  environment: staging
+
+replicas:
+  - name: order-service
+    count: 2
+  - name: payment-service
+    count: 2
+  - name: api-gateway
+    count: 2
+
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 50m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 128Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 200m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 256Mi
+    target:
+      kind: Deployment
+
+configMapGenerator:
+  - name: shared-config
+    behavior: merge
+    literals:
+      - LOG_LEVEL=debug
+      - REDIS_URL=redis://staging-redis:6379
+
+secretGenerator:
+  - name: order-service-secrets
+    literals:
+      - database-url=postgresql://staging:password@staging-db:5432/orders
+```
+</Tab>
+<Tab value="Production">
+```yaml title="infra/kubernetes/overlays/production/kustomization.yaml"
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: platform-production
+
+resources:
+  - ../../base
+  - ingress.yaml
+  - poddisruptionbudget.yaml
+  - networkpolicy.yaml
+
+namePrefix: prod-
+
+commonLabels:
+  environment: production
+
+replicas:
+  - name: order-service
+    count: 5
+  - name: payment-service
+    count: 5
+  - name: api-gateway
+    count: 3
+
+images:
+  - name: ghcr.io/org/order-service
+    newTag: v1.2.3
+  - name: ghcr.io/org/payment-service
+    newTag: v1.2.3
+  - name: ghcr.io/org/api-gateway
+    newTag: v1.2.3
+
+patches:
+  - path: hpa-patch.yaml
+
+configMapGenerator:
+  - name: shared-config
+    behavior: merge
+    literals:
+      - LOG_LEVEL=warn
+      - REDIS_URL=redis://production-redis-cluster:6379
+```
+
+```yaml title="infra/kubernetes/overlays/production/poddisruptionbudget.yaml"
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: order-service-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: order-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: payment-service-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: payment-service
+```
+</Tab>
+</Tabs>
+
+### Blue-Green Deployment
+
+```yaml title="infra/kubernetes/services/api-gateway-bluegreen.yaml"
+# Blue deployment (current)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway-blue
+  labels:
+    app: api-gateway
+    version: blue
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: api-gateway
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+        version: blue
+    spec:
+      containers:
+        - name: api-gateway
+          image: ghcr.io/org/api-gateway:v1.2.2
+          ports:
+            - containerPort: 3000
+---
+# Green deployment (new)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway-green
+  labels:
+    app: api-gateway
+    version: green
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: api-gateway
+      version: green
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+        version: green
+    spec:
+      containers:
+        - name: api-gateway
+          image: ghcr.io/org/api-gateway:v1.2.3
+          ports:
+            - containerPort: 3000
+---
+# Service pointing to active deployment
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+spec:
+  selector:
+    app: api-gateway
+    version: blue  # Switch to 'green' to cutover
+  ports:
+    - port: 80
+      targetPort: 3000
+```
+
+### Canary Deployment with Istio
+
+```yaml title="infra/kubernetes/istio/canary.yaml"
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: api-gateway
+spec:
+  hosts:
+    - api-gateway
+  http:
+    - match:
+        - headers:
+            x-canary:
+              exact: "true"
+      route:
+        - destination:
+            host: api-gateway
+            subset: canary
+    - route:
+        - destination:
+            host: api-gateway
+            subset: stable
+          weight: 95
+        - destination:
+            host: api-gateway
+            subset: canary
+          weight: 5
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: api-gateway
+spec:
+  host: api-gateway
+  subsets:
+    - name: stable
+      labels:
+        version: v1.2.2
+    - name: canary
+      labels:
+        version: v1.2.3
+```
+
+---
+
+## Serverless Deployments
+
+### AWS Lambda with SST
+
+```typescript title="infra/sst.config.ts"
+import { SSTConfig } from 'sst';
+import { Api, Function, Queue, Bucket, Table } from 'sst/constructs';
+
+export default {
+  config() {
+    return {
+      name: 'platform',
+      region: 'us-east-1',
+    };
+  },
+  stacks(app) {
+    app.stack(function ApiStack({ stack }) {
+      // DynamoDB table
+      const ordersTable = new Table(stack, 'Orders', {
+        fields: {
+          pk: 'string',
+          sk: 'string',
+          gsi1pk: 'string',
+          gsi1sk: 'string',
+        },
+        primaryIndex: { partitionKey: 'pk', sortKey: 'sk' },
+        globalIndexes: {
+          gsi1: { partitionKey: 'gsi1pk', sortKey: 'gsi1sk' },
+        },
+      });
+
+      // Event queue
+      const orderQueue = new Queue(stack, 'OrderQueue', {
+        consumer: {
+          function: {
+            handler: 'services/order-processor/src/handler.process',
+            timeout: 30,
+            memorySize: 512,
+          },
+        },
+      });
+
+      // S3 bucket for exports
+      const exportsBucket = new Bucket(stack, 'Exports', {
+        cors: true,
+      });
+
+      // API Gateway
+      const api = new Api(stack, 'Api', {
+        defaults: {
+          function: {
+            timeout: 10,
+            memorySize: 256,
+            environment: {
+              ORDERS_TABLE: ordersTable.tableName,
+              ORDER_QUEUE_URL: orderQueue.queueUrl,
+            },
+            bind: [ordersTable, orderQueue],
+          },
+        },
+        routes: {
+          'POST /orders': 'services/api-gateway/src/routes/orders.create',
+          'GET /orders/{id}': 'services/api-gateway/src/routes/orders.get',
+          'GET /orders': 'services/api-gateway/src/routes/orders.list',
+          'PUT /orders/{id}': 'services/api-gateway/src/routes/orders.update',
+          'DELETE /orders/{id}': 'services/api-gateway/src/routes/orders.cancel',
+          
+          'POST /payments': 'services/api-gateway/src/routes/payments.create',
+          'GET /payments/{id}': 'services/api-gateway/src/routes/payments.get',
+          'POST /payments/{id}/refund': 'services/api-gateway/src/routes/payments.refund',
+        },
+      });
+
+      // Scheduled jobs
+      new Function(stack, 'DailyReport', {
+        handler: 'services/reports/src/daily.handler',
+        timeout: 300,
+        memorySize: 1024,
+        bind: [ordersTable, exportsBucket],
+        schedule: 'rate(1 day)',
+      });
+
+      stack.addOutputs({
+        ApiEndpoint: api.url,
+      });
+    });
+  },
+} satisfies SSTConfig;
+```
+
+### Lambda Handler
+
+```typescript title="services/api-gateway/src/routes/orders.ts"
+import { APIGatewayProxyHandlerV2 } from 'aws-lambda';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { randomUUID } from 'crypto';
+
+const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const sqs = new SQSClient({});
+
+const ORDERS_TABLE = process.env.ORDERS_TABLE!;
+const ORDER_QUEUE_URL = process.env.ORDER_QUEUE_URL!;
+
+export const create: APIGatewayProxyHandlerV2 = async (event) => {
+  try {
+    const body = JSON.parse(event.body || '{}');
+    
+    const order = {
+      pk: `ORDER#${randomUUID()}`,
+      sk: 'METADATA',
+      customerId: body.customerId,
+      items: body.items,
+      status: 'PENDING',
+      createdAt: new Date().toISOString(),
+      gsi1pk: `CUSTOMER#${body.customerId}`,
+      gsi1sk: new Date().toISOString(),
+    };
+
+    await ddb.send(new PutCommand({
+      TableName: ORDERS_TABLE,
+      Item: order,
+      ConditionExpression: 'attribute_not_exists(pk)',
+    }));
+
+    // Queue for async processing
+    await sqs.send(new SendMessageCommand({
+      QueueUrl: ORDER_QUEUE_URL,
+      MessageBody: JSON.stringify({
+        type: 'ORDER_CREATED',
+        orderId: order.pk.replace('ORDER#', ''),
+        customerId: order.customerId,
+      }),
+    }));
+
+    return {
+      statusCode: 201,
+      body: JSON.stringify({
+        orderId: order.pk.replace('ORDER#', ''),
+        status: order.status,
+        createdAt: order.createdAt,
+      }),
+    };
+  } catch (error) {
+    console.error('Failed to create order:', error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Failed to create order' }),
+    };
+  }
+};
+
+export const get: APIGatewayProxyHandlerV2 = async (event) => {
+  const orderId = event.pathParameters?.id;
+
+  const result = await ddb.send(new GetCommand({
+    TableName: ORDERS_TABLE,
+    Key: { pk: `ORDER#${orderId}`, sk: 'METADATA' },
+  }));
+
+  if (!result.Item) {
+    return {
+      statusCode: 404,
+      body: JSON.stringify({ error: 'Order not found' }),
+    };
+  }
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      orderId: result.Item.pk.replace('ORDER#', ''),
+      customerId: result.Item.customerId,
+      items: result.Item.items,
+      status: result.Item.status,
+      createdAt: result.Item.createdAt,
+    }),
+  };
+};
+
+export const list: APIGatewayProxyHandlerV2 = async (event) => {
+  const customerId = event.queryStringParameters?.customerId;
+
+  if (!customerId) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: 'customerId is required' }),
+    };
+  }
+
+  const result = await ddb.send(new QueryCommand({
+    TableName: ORDERS_TABLE,
+    IndexName: 'gsi1',
+    KeyConditionExpression: 'gsi1pk = :pk',
+    ExpressionAttributeValues: {
+      ':pk': `CUSTOMER#${customerId}`,
+    },
+    ScanIndexForward: false,
+    Limit: 20,
+  }));
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      orders: result.Items?.map(item => ({
+        orderId: item.pk.replace('ORDER#', ''),
+        status: item.status,
+        createdAt: item.createdAt,
+      })),
+    }),
+  };
+};
+```
+
+---
+
+## Edge Deployments
+
+### Cloudflare Workers
+
+```typescript title="services/edge-api/src/index.ts"
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { cache } from 'hono/cache';
+import { logger } from 'hono/logger';
+
+type Bindings = {
+  ORDERS_KV: KVNamespace;
+  ORDERS_DO: DurableObjectNamespace;
+  API_SECRET: string;
+};
+
+const app = new Hono<{ Bindings: Bindings }>();
+
+app.use('*', logger());
+app.use('*', cors());
+
+// Cache GET requests at edge
+app.get(
+  '/api/products/*',
+  cache({
+    cacheName: 'products',
+    cacheControl: 'max-age=3600',
+  })
+);
+
+// Rate limiting with Durable Objects
+app.use('/api/*', async (c, next) => {
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown';
+  const rateLimiter = c.env.ORDERS_DO.get(
+    c.env.ORDERS_DO.idFromName(`ratelimit:${ip}`)
+  );
+  
+  const response = await rateLimiter.fetch(c.req.raw);
+  if (response.status === 429) {
+    return c.json({ error: 'Rate limit exceeded' }, 429);
+  }
+  
+  await next();
+});
+
+// Edge-cached order lookup
+app.get('/api/orders/:id', async (c) => {
+  const orderId = c.req.param('id');
+  
+  // Check KV cache first
+  const cached = await c.env.ORDERS_KV.get(`order:${orderId}`, 'json');
+  if (cached) {
+    return c.json(cached);
+  }
+  
+  // Fetch from origin
+  const response = await fetch(`${c.env.API_ORIGIN}/orders/${orderId}`, {
+    headers: { Authorization: `Bearer ${c.env.API_SECRET}` },
+  });
+  
+  if (!response.ok) {
+    return c.json({ error: 'Order not found' }, 404);
+  }
+  
+  const order = await response.json();
+  
+  // Cache for 5 minutes
+  await c.env.ORDERS_KV.put(`order:${orderId}`, JSON.stringify(order), {
+    expirationTtl: 300,
+  });
+  
+  return c.json(order);
+});
+
+export default app;
+
+// Durable Object for rate limiting
+export class RateLimiter {
+  private requests: number[] = [];
+  private readonly limit = 100;
+  private readonly window = 60000; // 1 minute
+
+  async fetch(request: Request): Promise<Response> {
+    const now = Date.now();
+    this.requests = this.requests.filter(t => now - t < this.window);
+    
+    if (this.requests.length >= this.limit) {
+      return new Response('Rate limit exceeded', { status: 429 });
+    }
+    
+    this.requests.push(now);
+    return new Response('OK', { status: 200 });
+  }
+}
+```
+
+```toml title="services/edge-api/wrangler.toml"
+name = "platform-edge"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+API_ORIGIN = "https://api.org.com"
+
+[[kv_namespaces]]
+binding = "ORDERS_KV"
+id = "abc123"
+
+[[durable_objects.bindings]]
+name = "ORDERS_DO"
+class_name = "RateLimiter"
+
+[[durable_objects.migrations]]
+tag = "v1"
+new_classes = ["RateLimiter"]
+
+[env.staging]
+vars = { API_ORIGIN = "https://staging-api.org.com" }
+
+[env.production]
+routes = [
+  { pattern = "api.org.com/*", zone_name = "org.com" }
+]
+```
+
+---
+
+## Terraform Infrastructure
+
+```hcl title="infra/terraform/main.tf"
+terraform {
+  required_version = ">= 1.5"
+  
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.25"
+    }
+  }
+  
+  backend "s3" {
+    bucket         = "org-terraform-state"
+    key            = "platform/terraform.tfstate"
+    region         = "us-east-1"
+    encrypt        = true
+    dynamodb_table = "terraform-locks"
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+  
+  default_tags {
+    tags = {
+      Project     = "platform"
+      Environment = var.environment
+      ManagedBy   = "terraform"
+    }
+  }
+}
+
+# EKS Cluster
+module "eks" {
+  source  = "terraform-aws-modules/eks/aws"
+  version = "~> 20.0"
+
+  cluster_name    = "${var.project}-${var.environment}"
+  cluster_version = "1.29"
+
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_subnets
+
+  cluster_endpoint_public_access = true
+
+  eks_managed_node_groups = {
+    general = {
+      desired_size = 3
+      min_size     = 2
+      max_size     = 10
+
+      instance_types = ["t3.medium"]
+      capacity_type  = "ON_DEMAND"
+
+      labels = {
+        workload = "general"
+      }
+    }
+    
+    compute = {
+      desired_size = 2
+      min_size     = 0
+      max_size     = 20
+
+      instance_types = ["c6i.xlarge", "c6a.xlarge"]
+      capacity_type  = "SPOT"
+
+      labels = {
+        workload = "compute"
+      }
+
+      taints = [{
+        key    = "workload"
+        value  = "compute"
+        effect = "NO_SCHEDULE"
+      }]
+    }
+  }
+
+  cluster_addons = {
+    coredns = {
+      most_recent = true
+    }
+    kube-proxy = {
+      most_recent = true
+    }
+    vpc-cni = {
+      most_recent = true
+    }
+    aws-ebs-csi-driver = {
+      most_recent = true
+    }
+  }
+}
+
+# RDS Database
+module "rds" {
+  source  = "terraform-aws-modules/rds/aws"
+  version = "~> 6.0"
+
+  identifier = "${var.project}-${var.environment}"
+
+  engine               = "postgres"
+  engine_version       = "16.1"
+  family               = "postgres16"
+  major_engine_version = "16"
+  instance_class       = var.environment == "production" ? "db.r6g.large" : "db.t3.medium"
+
+  allocated_storage     = 20
+  max_allocated_storage = 100
+
+  db_name  = "platform"
+  username = "platform"
+  port     = 5432
+
+  multi_az               = var.environment == "production"
+  db_subnet_group_name   = module.vpc.database_subnet_group_name
+  vpc_security_group_ids = [module.security_group_rds.security_group_id]
+
+  backup_retention_period = var.environment == "production" ? 30 : 7
+  deletion_protection     = var.environment == "production"
+
+  performance_insights_enabled = true
+  monitoring_interval          = 60
+
+  parameters = [
+    {
+      name  = "log_statement"
+      value = "all"
+    }
+  ]
+}
+
+# ElastiCache Redis
+module "redis" {
+  source  = "terraform-aws-modules/elasticache/aws"
+  version = "~> 1.0"
+
+  cluster_id           = "${var.project}-${var.environment}"
+  engine               = "redis"
+  engine_version       = "7.1"
+  node_type            = var.environment == "production" ? "cache.r6g.large" : "cache.t3.medium"
+  num_cache_clusters   = var.environment == "production" ? 3 : 1
+  
+  subnet_ids         = module.vpc.private_subnets
+  security_group_ids = [module.security_group_redis.security_group_id]
+
+  automatic_failover_enabled = var.environment == "production"
+  multi_az_enabled          = var.environment == "production"
+}
+
+# Outputs
+output "eks_cluster_endpoint" {
+  value = module.eks.cluster_endpoint
+}
+
+output "rds_endpoint" {
+  value = module.rds.db_instance_endpoint
+}
+
+output "redis_endpoint" {
+  value = module.redis.cluster_configuration_endpoint
+}
+```
+
+## Deployment Decision Matrix
+
+| Criteria | Kubernetes | Serverless | Edge |
+|----------|------------|------------|------|
+| **Latency** | 10-100ms | 50-200ms | 1-10ms |
+| **Cold Start** | None | 100ms-3s | < 50ms |
+| **Scaling** | Seconds | Instant | Instant |
+| **Cost Model** | Per-node | Per-request | Per-request |
+| **State** | Stateful OK | Stateless | Stateless |
+| **Max Duration** | Unlimited | 15min | 30s |
+| **Best For** | APIs, workers | Events, webhooks | CDN, auth |
+
+## Best Practices
+
+<Callout type="warn">
+**Production Checklist:**
+- ✅ Health checks configured (liveness, readiness, startup)
+- ✅ Resource limits set (CPU, memory)
+- ✅ Pod disruption budgets defined
+- ✅ Horizontal pod autoscaling enabled
+- ✅ Network policies in place
+- ✅ Secrets managed externally (AWS Secrets Manager, Vault)
+</Callout>
+
+## Related Documentation
+
+- **[Monorepo Structure](/docs/code-quality/architecture/infrastructure-as-code/monorepo-structure)** - Project organization
+- **[Pipeline Orchestration](/docs/code-quality/architecture/infrastructure-as-code/pipeline-orchestration)** - CI/CD workflows
+- **[Composable Architecture](/docs/code-quality/architecture/infrastructure-as-code/composable-architecture)** - Combining patterns

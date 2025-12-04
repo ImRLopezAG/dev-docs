@@ -1,0 +1,960 @@
+---
+title: Pipeline Orchestration
+description: CI/CD workflows for building, testing, and deploying services across the monorepo with intelligent caching and parallel execution.
+---
+
+import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { File, Files, Folder } from 'fumadocs-ui/components/files';
+import { Steps } from 'fumadocs-ui/components/steps';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+# Pipeline Orchestration
+
+Build **intelligent CI/CD pipelines** that understand monorepo dependencies, execute tasks in parallel, and deploy only what has changed.
+
+<Callout type="info">
+Pipelines leverage **Turborepo** for task orchestration and caching, reducing build times by up to 90% through intelligent dependency tracking.
+</Callout>
+
+## Pipeline Architecture
+
+```mermaid
+graph TB
+    subgraph Trigger["Triggers"]
+        PR["Pull Request"]
+        Push["Push to main"]
+        Manual["Manual Deploy"]
+        Schedule["Scheduled"]
+    end
+
+    subgraph CI["CI Pipeline"]
+        Detect["Detect Changes"]
+        Lint["Lint & Format"]
+        Type["Type Check"]
+        Test["Unit Tests"]
+        Build["Build Packages"]
+        Integration["Integration Tests"]
+    end
+
+    subgraph CD["CD Pipeline"]
+        Stage["Deploy Staging"]
+        E2E["E2E Tests"]
+        Approve["Manual Approval"]
+        Prod["Deploy Production"]
+    end
+
+    subgraph Artifacts["Artifacts"]
+        Cache["Remote Cache"]
+        Registry["Package Registry"]
+        Container["Container Registry"]
+    end
+
+    PR --> Detect
+    Push --> Detect
+    Manual --> Stage
+    Schedule --> Detect
+
+    Detect --> Lint --> Type --> Test --> Build --> Integration
+    Integration --> Stage --> E2E --> Approve --> Prod
+
+    Build --> Cache & Registry & Container
+```
+
+## Turborepo Configuration
+
+```json title="turbo.json"
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [
+    ".env",
+    "tsconfig.base.json"
+  ],
+  "globalEnv": [
+    "NODE_ENV",
+    "CI"
+  ],
+  "ui": "tui",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env*"
+      ],
+      "outputs": [
+        "dist/**",
+        ".next/**",
+        "!.next/cache/**"
+      ],
+      "cache": true
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "test/**",
+        "**/*.test.ts",
+        "vitest.config.ts"
+      ],
+      "outputs": [
+        "coverage/**"
+      ],
+      "cache": true
+    },
+    "test:integration": {
+      "dependsOn": ["build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "test/integration/**"
+      ],
+      "outputs": [],
+      "cache": false,
+      "env": [
+        "DATABASE_URL",
+        "REDIS_URL"
+      ]
+    },
+    "lint": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "biome.json",
+        "../../biome.json"
+      ],
+      "outputs": [],
+      "cache": true
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "tsconfig.json",
+        "../../tsconfig.base.json"
+      ],
+      "outputs": [],
+      "cache": true
+    },
+    "generate": {
+      "inputs": [
+        "../proto/**/*.proto",
+        "buf.gen.yaml"
+      ],
+      "outputs": [
+        "src/generated/**"
+      ],
+      "cache": true
+    },
+    "deploy": {
+      "dependsOn": ["build", "test"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "Dockerfile",
+        "docker-compose.yml"
+      ],
+      "outputs": [],
+      "cache": false,
+      "persistent": false
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    }
+  }
+}
+```
+
+## GitHub Actions Workflows
+
+### Main CI Pipeline
+
+```yaml title=".github/workflows/ci.yml"
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+
+jobs:
+  # Detect what packages changed
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.filter.outputs.changes }}
+      sdk: ${{ steps.filter.outputs.sdk }}
+      services: ${{ steps.filter.outputs.services }}
+      apps: ${{ steps.filter.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            sdk:
+              - 'packages/sdk-*/**'
+              - 'packages/proto/**'
+            services:
+              - 'services/**'
+            apps:
+              - 'apps/**'
+            infra:
+              - 'infra/**'
+              - '.github/workflows/**'
+
+  # Lint and format check
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          
+      - run: pnpm install --frozen-lockfile
+      
+      - name: Lint
+        run: pnpm turbo lint --filter='...[origin/main]'
+
+  # Type checking
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          
+      - run: pnpm install --frozen-lockfile
+      
+      - name: Type Check
+        run: pnpm turbo typecheck --filter='...[origin/main]'
+
+  # Unit tests with coverage
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          
+      - run: pnpm install --frozen-lockfile
+      
+      - name: Run Tests
+        run: pnpm turbo test --filter='...[origin/main]'
+        
+      - name: Upload Coverage
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./packages/*/coverage/lcov.info,./services/*/coverage/lcov.info
+
+  # Build all packages
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          
+      - run: pnpm install --frozen-lockfile
+      
+      - name: Build
+        run: pnpm turbo build --filter='...[origin/main]'
+        
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            packages/*/dist
+            services/*/dist
+            apps/*/.next
+          retention-days: 1
+
+  # Integration tests
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [build]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          
+      - run: pnpm install --frozen-lockfile
+      
+      - name: Run Integration Tests
+        run: pnpm turbo test:integration --filter='...[origin/main]'
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          REDIS_URL: redis://localhost:6379
+```
+
+### Container Build Pipeline
+
+```yaml title=".github/workflows/docker.yml"
+name: Docker Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/**'
+      - 'apps/**'
+      - 'packages/**'
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to build'
+        required: true
+        type: choice
+        options:
+          - all
+          - order-service
+          - payment-service
+          - api-gateway
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository }}
+
+jobs:
+  detect:
+    name: Detect Services
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - id: set-matrix
+        run: |
+          if [ "${{ github.event.inputs.service }}" = "all" ] || [ -z "${{ github.event.inputs.service }}" ]; then
+            SERVICES=$(ls -d services/*/ | xargs -I {} basename {} | jq -R -s -c 'split("\n")[:-1]')
+          else
+            SERVICES='["${{ github.event.inputs.service }}"]'
+          fi
+          echo "matrix={\"service\":$SERVICES}" >> $GITHUB_OUTPUT
+
+  build:
+    name: Build ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: detect
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect.outputs.matrix) }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+            
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          build-args: |
+            SERVICE=${{ matrix.service }}
+```
+
+### Deployment Pipeline
+
+```yaml title=".github/workflows/deploy.yml"
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: environment
+      services:
+        description: 'Services to deploy (comma-separated or "all")'
+        required: false
+        default: 'all'
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' && 
+      github.event.inputs.environment == 'staging' ||
+      github.event.workflow_run.conclusion == 'success'
+    environment:
+      name: staging
+      url: https://staging.org.com
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          
+      - name: Deploy to ECS
+        run: |
+          ./scripts/deploy.sh staging ${{ github.event.inputs.services || 'all' }}
+          
+      - name: Run Smoke Tests
+        run: |
+          ./scripts/smoke-test.sh https://staging.org.com
+
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          
+      - run: pnpm install --frozen-lockfile
+      
+      - name: Run E2E Tests
+        run: pnpm --filter=e2e-tests test
+        env:
+          BASE_URL: https://staging.org.com
+          
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: apps/e2e-tests/test-results
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: e2e-tests
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
+    environment:
+      name: production
+      url: https://org.com
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          
+      - name: Blue-Green Deploy
+        run: |
+          ./scripts/deploy.sh production ${{ github.event.inputs.services || 'all' }} --blue-green
+          
+      - name: Verify Deployment
+        run: |
+          ./scripts/verify-deployment.sh production
+          
+      - name: Notify Success
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "✅ Production deployment successful",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Production Deployment*\nServices: ${{ github.event.inputs.services }}\nCommit: `${{ github.sha }}`"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+```
+
+## Deployment Scripts
+
+```bash title="scripts/deploy.sh"
+#!/bin/bash
+set -euo pipefail
+
+ENVIRONMENT=$1
+SERVICES=$2
+STRATEGY=${3:-"rolling"}
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log() { echo -e "${GREEN}[DEPLOY]${NC} $1"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+
+# Load environment config
+source "./infra/environments/${ENVIRONMENT}.env"
+
+# Get services to deploy
+if [ "$SERVICES" = "all" ]; then
+  SERVICES=$(ls -d services/*/ | xargs -I {} basename {})
+fi
+
+log "Deploying to ${ENVIRONMENT}: ${SERVICES}"
+
+for SERVICE in $SERVICES; do
+  log "Deploying ${SERVICE}..."
+  
+  IMAGE="${REGISTRY}/${SERVICE}:${GITHUB_SHA:-latest}"
+  
+  case $STRATEGY in
+    "rolling")
+      aws ecs update-service \
+        --cluster "${CLUSTER_NAME}" \
+        --service "${SERVICE}" \
+        --force-new-deployment \
+        --task-definition "${SERVICE}:latest"
+      ;;
+    "--blue-green")
+      # Create new task definition
+      TASK_DEF=$(aws ecs describe-task-definition --task-definition "${SERVICE}" --query 'taskDefinition')
+      NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$IMAGE" '.containerDefinitions[0].image = $IMAGE')
+      
+      # Register new task definition
+      aws ecs register-task-definition --cli-input-json "$NEW_TASK_DEF"
+      
+      # Update service with CodeDeploy
+      aws deploy create-deployment \
+        --application-name "${SERVICE}-app" \
+        --deployment-group-name "${SERVICE}-${ENVIRONMENT}" \
+        --revision "revisionType=AppSpecContent,appSpecContent={content=$(cat appspec.yml | base64)}"
+      ;;
+    *)
+      error "Unknown deployment strategy: ${STRATEGY}"
+      ;;
+  esac
+  
+  log "Waiting for ${SERVICE} to stabilize..."
+  aws ecs wait services-stable \
+    --cluster "${CLUSTER_NAME}" \
+    --services "${SERVICE}"
+    
+  log "✅ ${SERVICE} deployed successfully"
+done
+
+log "🎉 All services deployed to ${ENVIRONMENT}"
+```
+
+## Pipeline Filters
+
+<Tabs items={['Package Filter', 'Path Filter', 'Dependency Filter']}>
+<Tab value="Package Filter">
+```bash
+# Build only packages that changed since main
+pnpm turbo build --filter='...[origin/main]'
+
+# Build specific package and its dependencies
+pnpm turbo build --filter='@org/order-service...'
+
+# Build all dependents of a package
+pnpm turbo build --filter='...@org/sdk-typescript'
+
+# Build packages matching a pattern
+pnpm turbo build --filter='@org/sdk-*'
+```
+</Tab>
+<Tab value="Path Filter">
+```yaml
+# GitHub Actions path filter
+- uses: dorny/paths-filter@v3
+  id: changes
+  with:
+    filters: |
+      sdk:
+        - 'packages/sdk-*/**'
+        - 'packages/proto/**'
+      services:
+        - 'services/**'
+      shared:
+        - 'packages/shared-*/**'
+```
+</Tab>
+<Tab value="Dependency Filter">
+```bash
+# Build package and everything that depends on it
+pnpm turbo build --filter='...^@org/proto'
+
+# Build only direct dependents
+pnpm turbo build --filter='@org/proto^...'
+
+# Combine filters
+pnpm turbo build \
+  --filter='...[origin/main]' \
+  --filter='!@org/e2e-tests'
+```
+</Tab>
+</Tabs>
+
+## Remote Caching
+
+```yaml title=".github/workflows/ci.yml"
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+  TURBO_REMOTE_ONLY: true
+
+# Alternative: Self-hosted cache
+env:
+  TURBO_API: https://cache.org.internal
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: org
+```
+
+## Parallel Execution Matrix
+
+```yaml title=".github/workflows/test-matrix.yml"
+name: Test Matrix
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    name: Test (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - '@org/sdk-typescript'
+          - '@org/order-service'
+          - '@org/payment-service'
+          - '@org/api-gateway'
+        node: [18, 20, 22]
+        exclude:
+          - package: '@org/api-gateway'
+            node: 18
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: 'pnpm'
+          
+      - run: pnpm install --frozen-lockfile
+      
+      - name: Test ${{ matrix.package }}
+        run: pnpm turbo test --filter='${{ matrix.package }}'
+```
+
+## Scheduled Pipelines
+
+```yaml title=".github/workflows/scheduled.yml"
+name: Scheduled Jobs
+
+on:
+  schedule:
+    # Security scan - daily at 2am
+    - cron: '0 2 * * *'
+    # Dependency updates - weekly on Monday
+    - cron: '0 9 * * 1'
+    # Performance benchmarks - weekly on Sunday
+    - cron: '0 0 * * 0'
+
+jobs:
+  security-scan:
+    name: Security Scan
+    if: github.event.schedule == '0 2 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          
+      - name: Audit Dependencies
+        run: pnpm audit --audit-level=high
+
+  dependency-updates:
+    name: Update Dependencies
+    if: github.event.schedule == '0 9 * * 1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          
+      - name: Update Dependencies
+        run: pnpm update --recursive --latest
+        
+      - name: Create PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          title: 'chore: weekly dependency updates'
+          branch: 'deps/weekly-update'
+          commit-message: 'chore: update dependencies'
+
+  benchmarks:
+    name: Performance Benchmarks
+    if: github.event.schedule == '0 0 * * 0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo build
+      
+      - name: Run Benchmarks
+        run: pnpm --filter=benchmarks run bench
+        
+      - name: Store Results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: 'customSmallerIsBetter'
+          output-file-path: benchmarks/results.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+```
+
+## Pipeline Monitoring
+
+<Accordions>
+<Accordion title="Build metrics dashboard">
+```yaml title=".github/workflows/metrics.yml"
+- name: Report Build Metrics
+  run: |
+    # Capture Turborepo stats
+    STATS=$(pnpm turbo build --dry=json | jq '.tasks')
+    
+    # Send to monitoring
+    curl -X POST https://metrics.org.internal/builds \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"repo\": \"$GITHUB_REPOSITORY\",
+        \"sha\": \"$GITHUB_SHA\",
+        \"duration\": $(echo $STATS | jq '.[] | .duration' | paste -sd+ | bc),
+        \"cache_hits\": $(echo $STATS | jq '[.[] | select(.cache == "HIT")] | length'),
+        \"cache_misses\": $(echo $STATS | jq '[.[] | select(.cache == "MISS")] | length')
+      }"
+```
+</Accordion>
+
+<Accordion title="Slack notifications">
+```yaml
+- name: Notify on Failure
+  if: failure()
+  uses: slackapi/slack-github-action@v1
+  with:
+    payload: |
+      {
+        "text": "❌ CI Failed",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*CI Pipeline Failed*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>\n\nBranch: `${{ github.ref_name }}`\nCommit: `${{ github.sha }}`"
+            }
+          }
+        ]
+      }
+  env:
+    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+```
+</Accordion>
+
+<Accordion title="PR status checks">
+```yaml title=".github/workflows/pr-status.yml"
+name: PR Status
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          
+      - run: pnpm install --frozen-lockfile
+      
+      - name: Generate Summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Affected packages
+          echo "### Affected Packages" >> $GITHUB_STEP_SUMMARY
+          pnpm turbo build --dry=json --filter='...[origin/main]' | \
+            jq -r '.packages[]' | \
+            while read pkg; do echo "- $pkg"; done >> $GITHUB_STEP_SUMMARY
+          
+          # Cache status
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Cache Status" >> $GITHUB_STEP_SUMMARY
+          pnpm turbo build --filter='...[origin/main]' 2>&1 | \
+            grep -E '(cache hit|cache miss)' >> $GITHUB_STEP_SUMMARY || true
+```
+</Accordion>
+</Accordions>
+
+## Best Practices
+
+<Callout type="warn">
+**Pipeline Performance Tips:**
+- Use `--filter` to build only affected packages
+- Enable remote caching for shared builds
+- Run lint/typecheck in parallel with tests
+- Use build artifacts between jobs instead of rebuilding
+</Callout>
+
+1. **Fail Fast**: Run quick checks (lint, typecheck) before slow ones (tests, build)
+2. **Cache Everything**: Dependencies, build outputs, Docker layers
+3. **Parallel Execution**: Independent tasks should run concurrently
+4. **Minimal Triggers**: Use path filters to avoid unnecessary runs
+5. **Environment Isolation**: Staging validates before production
+
+## Related Documentation
+
+- **[Monorepo Structure](/docs/code-quality/architecture/infrastructure-as-code/monorepo-structure)** - Workspace organization
+- **[Deployment Strategies](/docs/code-quality/architecture/infrastructure-as-code/deployment-strategies)** - Kubernetes and serverless deployments
+- **[Composable Architecture](/docs/code-quality/architecture/infrastructure-as-code/composable-architecture)** - Combining patterns

@@ -25,7 +25,6 @@ export function CategoriesSection() {
 				break
 		}
 	}
-	console.log('Articles count:', Object.fromEntries(article))
 	return (
 		<LandingSection className='px-6 py-20'>
 			<div className='mx-auto max-w-7xl'>
@@ -48,7 +47,7 @@ export function CategoriesSection() {
 						description='Containerization, Docker Compose, multi-stage builds, and orchestration.'
 						articleCount={article.get('docker') ?? 0}
 						colorClass='blue'
-						href='#'
+						href='/docs/docker'
 					/>
 
 					{/* SQL Card */}

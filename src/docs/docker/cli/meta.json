@@ -1,0 +1,11 @@
+{
+  "title": "Docker CLI",
+  "description": "Essential Docker command-line interface commands and workflows",
+  "icon": "Terminal",
+  "pages": [
+    "index",
+    "containers",
+    "images",
+    "system"
+  ]
+}

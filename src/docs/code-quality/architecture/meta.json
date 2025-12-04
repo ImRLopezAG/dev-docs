@@ -1,0 +1,16 @@
+{
+  "title": "Software Architecture",
+  "description": "Architectural patterns and styles for building scalable systems",
+  "icon": "Building2",
+  "pages": [
+    "index",
+    "monolithic",
+    "microservices",
+    "serverless",
+    "event-driven",
+    "hexagonal",
+    "cqrs",
+    "event-sourcing",
+    "infrastructure-as-code"
+  ]
+}

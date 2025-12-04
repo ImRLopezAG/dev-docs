@@ -1,0 +1,1215 @@
+---
+title: SDK Architecture
+description: Contract-first development with protocol abstraction enabling language-agnostic service communication.
+---
+
+import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { File, Files, Folder } from 'fumadocs-ui/components/files';
+import { Steps } from 'fumadocs-ui/components/steps';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+# SDK Architecture
+
+The SDK architecture follows a **contract-first** approach where protocol definitions (Protocol Buffers, OpenAPI, JSON Schema) serve as the single source of truth. SDKs are **generated** from these contracts, ensuring type safety across all languages.
+
+## Core Design Principles
+
+<Steps>
+### Contract as Source of Truth
+
+The protocol definition (`.proto`, OpenAPI spec) is the authoritative contract. All SDKs are generated from this contract, ensuring consistency.
+
+```protobuf title="proto/common/v1/types.proto"
+syntax = "proto3";
+
+package org.common.v1;
+
+// Shared types used across all services
+message Money {
+  // Amount in smallest currency unit (cents for USD)
+  int64 amount = 1;
+  // ISO 4217 currency code
+  string currency = 2;
+}
+
+message Timestamp {
+  int64 seconds = 1;
+  int32 nanos = 2;
+}
+
+message Pagination {
+  int32 page = 1;
+  int32 page_size = 2;
+  string cursor = 3;
+}
+
+message PaginatedResponse {
+  int32 total_count = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+  string next_cursor = 4;
+  bool has_next_page = 5;
+}
+
+// Standard error response
+message Error {
+  string code = 1;
+  string message = 2;
+  map<string, string> details = 3;
+}
+```
+
+### Protocol Abstraction Layer
+
+SDKs abstract the underlying transport protocol. The same client interface works with gRPC, HTTP, TCP, or any other protocol.
+
+```typescript title="packages/sdk-core/src/transport.ts"
+// Transport interface - all protocols implement this
+interface Transport {
+  // Unary call (request/response)
+  call<TReq, TRes>(
+    method: MethodDescriptor<TReq, TRes>,
+    request: TReq,
+    options?: CallOptions
+  ): Promise<TRes>;
+
+  // Server streaming
+  serverStream<TReq, TRes>(
+    method: MethodDescriptor<TReq, TRes>,
+    request: TReq,
+    options?: CallOptions
+  ): AsyncIterable<TRes>;
+
+  // Client streaming
+  clientStream<TReq, TRes>(
+    method: MethodDescriptor<TReq, TRes>,
+    options?: CallOptions
+  ): ClientStream<TReq, TRes>;
+
+  // Bidirectional streaming
+  bidiStream<TReq, TRes>(
+    method: MethodDescriptor<TReq, TRes>,
+    options?: CallOptions
+  ): BidiStream<TReq, TRes>;
+
+  // Close transport
+  close(): Promise<void>;
+}
+
+interface MethodDescriptor<TReq, TRes> {
+  service: string;
+  method: string;
+  requestType: MessageType<TReq>;
+  responseType: MessageType<TRes>;
+  streaming: StreamingType;
+}
+
+type StreamingType = 'unary' | 'server' | 'client' | 'bidi';
+
+interface CallOptions {
+  timeout?: number;
+  metadata?: Record<string, string>;
+  retryPolicy?: RetryPolicy;
+}
+```
+
+### Generated Clients Use Transport
+
+Generated service clients accept any transport implementation, making them protocol-agnostic.
+
+```typescript title="packages/sdk-typescript/src/generated/order-client.ts"
+// Auto-generated from order.proto
+import type { Transport, CallOptions } from '@org/sdk-core';
+import type {
+  CreateOrderRequest,
+  CreateOrderResponse,
+  GetOrderRequest,
+  Order,
+  WatchOrderRequest,
+  OrderEvent,
+  ListOrdersRequest,
+  ListOrdersResponse,
+} from './order-types';
+
+export const OrderServiceClient = (transport: Transport) => ({
+  createOrder: (
+    request: CreateOrderRequest,
+    options?: CallOptions
+  ): Promise<CreateOrderResponse> => {
+    return transport.call(
+      {
+        service: 'org.order.v1.OrderService',
+        method: 'CreateOrder',
+        requestType: CreateOrderRequest,
+        responseType: CreateOrderResponse,
+        streaming: 'unary',
+      },
+      request,
+      options
+    );
+  },
+
+  getOrder: (
+    request: GetOrderRequest,
+    options?: CallOptions
+  ): Promise<Order> => {
+    return transport.call(
+      {
+        service: 'org.order.v1.OrderService',
+        method: 'GetOrder',
+        requestType: GetOrderRequest,
+        responseType: Order,
+        streaming: 'unary',
+      },
+      request,
+      options
+    );
+  },
+
+  watchOrder: (
+    request: WatchOrderRequest,
+    options?: CallOptions
+  ): AsyncIterable<OrderEvent> => {
+    return transport.serverStream(
+      {
+        service: 'org.order.v1.OrderService',
+        method: 'WatchOrder',
+        requestType: WatchOrderRequest,
+        responseType: OrderEvent,
+        streaming: 'server',
+      },
+      request,
+      options
+    );
+  },
+
+  listOrders: (
+    request: ListOrdersRequest,
+    options?: CallOptions
+  ): Promise<ListOrdersResponse> => {
+    return transport.call(
+      {
+        service: 'org.order.v1.OrderService',
+        method: 'ListOrders',
+        requestType: ListOrdersRequest,
+        responseType: ListOrdersResponse,
+        streaming: 'unary',
+      },
+      request,
+      options
+    );
+  },
+});
+
+export type OrderServiceClient = ReturnType<typeof OrderServiceClient>;
+```
+
+### Dependency Injection Ready
+
+SDKs are designed for dependency injection, making testing and protocol swapping trivial.
+
+```typescript title="apps/api-gateway/src/composition.ts"
+import { OrderServiceClient } from '@org/sdk-typescript';
+import { GrpcTransport } from '@org/sdk-typescript/transports/grpc';
+import { HttpTransport } from '@org/sdk-typescript/transports/http';
+import { MockTransport } from '@org/sdk-typescript/transports/mock';
+
+interface ServiceContainer {
+  orderClient: OrderServiceClient;
+  paymentClient: PaymentServiceClient;
+  notificationClient: NotificationServiceClient;
+}
+
+// Production composition
+const createProductionContainer = (config: Config): ServiceContainer => {
+  // Use gRPC for internal services
+  const grpcTransport = new GrpcTransport({
+    host: config.orderService.host,
+    port: config.orderService.port,
+    tls: config.tls,
+  });
+
+  // Use HTTP for external services
+  const httpTransport = new HttpTransport({
+    baseUrl: config.paymentGateway.url,
+    headers: { 'X-API-Key': config.paymentGateway.apiKey },
+  });
+
+  return {
+    orderClient: OrderServiceClient(grpcTransport),
+    paymentClient: PaymentServiceClient(httpTransport),
+    notificationClient: NotificationServiceClient(grpcTransport),
+  };
+};
+
+// Test composition
+const createTestContainer = (): ServiceContainer => {
+  const mockTransport = new MockTransport();
+
+  // Setup mock responses
+  mockTransport.mock('org.order.v1.OrderService', 'CreateOrder', () => ({
+    orderId: 'test-order-123',
+    status: 'PENDING',
+    createdAt: new Date(),
+  }));
+
+  return {
+    orderClient: OrderServiceClient(mockTransport),
+    paymentClient: PaymentServiceClient(mockTransport),
+    notificationClient: NotificationServiceClient(mockTransport),
+  };
+};
+```
+</Steps>
+
+## Transport Implementations
+
+<Tabs items={['gRPC Transport', 'HTTP Transport', 'TCP Transport', 'WebSocket Transport']}>
+<Tab value="gRPC Transport">
+```typescript title="packages/sdk-typescript/src/transports/grpc.ts"
+import * as grpc from '@grpc/grpc-js';
+import type { Transport, MethodDescriptor, CallOptions } from '@org/sdk-core';
+
+interface GrpcConfig {
+  host: string;
+  port: number;
+  tls?: boolean;
+  credentials?: grpc.ChannelCredentials;
+  interceptors?: grpc.Interceptor[];
+}
+
+export const GrpcTransport = (config: GrpcConfig): Transport => {
+  const credentials = config.tls
+    ? grpc.credentials.createSsl()
+    : grpc.credentials.createInsecure();
+
+  const channel = new grpc.Channel(
+    `${config.host}:${config.port}`,
+    config.credentials ?? credentials,
+    {}
+  );
+
+  const clients = new Map<string, grpc.Client>();
+
+  const getClient = (serviceName: string): grpc.Client => {
+    if (!clients.has(serviceName)) {
+      const client = new grpc.Client(
+        `${config.host}:${config.port}`,
+        credentials
+      );
+      clients.set(serviceName, client);
+    }
+    return clients.get(serviceName)!;
+  };
+
+  return {
+    async call<TReq, TRes>(
+      method: MethodDescriptor<TReq, TRes>,
+      request: TReq,
+      options?: CallOptions
+    ): Promise<TRes> {
+      const client = getClient(method.service);
+      const path = `/${method.service}/${method.method}`;
+
+      return new Promise((resolve, reject) => {
+        const metadata = new grpc.Metadata();
+        if (options?.metadata) {
+          Object.entries(options.metadata).forEach(([k, v]) => {
+            metadata.set(k, v);
+          });
+        }
+
+        const deadline = options?.timeout
+          ? Date.now() + options.timeout
+          : undefined;
+
+        client.makeUnaryRequest(
+          path,
+          (req: TReq) => Buffer.from(method.requestType.encode(req)),
+          (buf: Buffer) => method.responseType.decode(buf),
+          request,
+          metadata,
+          { deadline },
+          (err, response) => {
+            if (err) reject(err);
+            else resolve(response as TRes);
+          }
+        );
+      });
+    },
+
+    async *serverStream<TReq, TRes>(
+      method: MethodDescriptor<TReq, TRes>,
+      request: TReq,
+      options?: CallOptions
+    ): AsyncIterable<TRes> {
+      const client = getClient(method.service);
+      const path = `/${method.service}/${method.method}`;
+
+      const metadata = new grpc.Metadata();
+      if (options?.metadata) {
+        Object.entries(options.metadata).forEach(([k, v]) => {
+          metadata.set(k, v);
+        });
+      }
+
+      const stream = client.makeServerStreamRequest(
+        path,
+        (req: TReq) => Buffer.from(method.requestType.encode(req)),
+        (buf: Buffer) => method.responseType.decode(buf),
+        request,
+        metadata
+      );
+
+      for await (const chunk of stream) {
+        yield chunk as TRes;
+      }
+    },
+
+    clientStream: (method, options) => {
+      // Implementation for client streaming
+      throw new Error('Client streaming not implemented');
+    },
+
+    bidiStream: (method, options) => {
+      // Implementation for bidirectional streaming
+      throw new Error('Bidi streaming not implemented');
+    },
+
+    async close(): Promise<void> {
+      clients.forEach(client => client.close());
+      clients.clear();
+    },
+  };
+};
+```
+</Tab>
+<Tab value="HTTP Transport">
+```typescript title="packages/sdk-typescript/src/transports/http.ts"
+import type { Transport, MethodDescriptor, CallOptions } from '@org/sdk-core';
+
+interface HttpConfig {
+  baseUrl: string;
+  headers?: Record<string, string>;
+  timeout?: number;
+  retry?: RetryConfig;
+}
+
+interface RetryConfig {
+  maxRetries: number;
+  backoff: 'exponential' | 'linear';
+  retryableStatuses: number[];
+}
+
+export const HttpTransport = (config: HttpConfig): Transport => {
+  const defaultHeaders = {
+    'Content-Type': 'application/json',
+    ...config.headers,
+  };
+
+  const fetchWithRetry = async (
+    url: string,
+    init: RequestInit,
+    retryConfig?: RetryConfig
+  ): Promise<Response> => {
+    const maxRetries = retryConfig?.maxRetries ?? 3;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(url, init);
+
+        if (response.ok) {
+          return response;
+        }
+
+        if (
+          retryConfig?.retryableStatuses?.includes(response.status) &&
+          attempt < maxRetries
+        ) {
+          const delay = retryConfig.backoff === 'exponential'
+            ? Math.pow(2, attempt) * 100
+            : attempt * 100;
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+
+        throw new HttpError(response.status, await response.text());
+      } catch (error) {
+        lastError = error as Error;
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 100));
+        }
+      }
+    }
+
+    throw lastError;
+  };
+
+  return {
+    async call<TReq, TRes>(
+      method: MethodDescriptor<TReq, TRes>,
+      request: TReq,
+      options?: CallOptions
+    ): Promise<TRes> {
+      // Convert gRPC-style method to REST endpoint
+      // org.order.v1.OrderService/CreateOrder -> /api/v1/orders
+      const endpoint = methodToEndpoint(method);
+      const httpMethod = methodToHttpMethod(method.method);
+
+      const url = new URL(endpoint, config.baseUrl);
+
+      const init: RequestInit = {
+        method: httpMethod,
+        headers: {
+          ...defaultHeaders,
+          ...options?.metadata,
+        },
+        signal: options?.timeout
+          ? AbortSignal.timeout(options.timeout)
+          : undefined,
+      };
+
+      if (httpMethod !== 'GET') {
+        init.body = JSON.stringify(request);
+      } else {
+        // Add query params for GET requests
+        Object.entries(request as Record<string, unknown>).forEach(([k, v]) => {
+          if (v !== undefined) {
+            url.searchParams.set(k, String(v));
+          }
+        });
+      }
+
+      const response = await fetchWithRetry(url.toString(), init, config.retry);
+      const data = await response.json();
+
+      return method.responseType.fromJSON(data);
+    },
+
+    async *serverStream<TReq, TRes>(
+      method: MethodDescriptor<TReq, TRes>,
+      request: TReq,
+      options?: CallOptions
+    ): AsyncIterable<TRes> {
+      // Use Server-Sent Events for streaming over HTTP
+      const endpoint = methodToEndpoint(method);
+      const url = new URL(endpoint, config.baseUrl);
+
+      Object.entries(request as Record<string, unknown>).forEach(([k, v]) => {
+        if (v !== undefined) {
+          url.searchParams.set(k, String(v));
+        }
+      });
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          ...defaultHeaders,
+          Accept: 'text/event-stream',
+          ...options?.metadata,
+        },
+      });
+
+      if (!response.body) {
+        throw new Error('No response body');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = JSON.parse(line.slice(6));
+            yield method.responseType.fromJSON(data);
+          }
+        }
+      }
+    },
+
+    clientStream: () => {
+      throw new Error('Client streaming not supported over HTTP');
+    },
+
+    bidiStream: () => {
+      throw new Error('Bidi streaming not supported over HTTP');
+    },
+
+    async close(): Promise<void> {
+      // HTTP is stateless, nothing to close
+    },
+  };
+};
+
+// Helper to map gRPC methods to REST endpoints
+const methodToEndpoint = (method: MethodDescriptor<unknown, unknown>): string => {
+  // org.order.v1.OrderService/CreateOrder -> /api/v1/orders
+  const parts = method.service.split('.');
+  const version = parts.find(p => p.startsWith('v')) ?? 'v1';
+  const resource = parts[parts.length - 1].replace('Service', '').toLowerCase();
+
+  const methodMappings: Record<string, string> = {
+    Create: `/${resource}s`,
+    Get: `/${resource}s/:id`,
+    List: `/${resource}s`,
+    Update: `/${resource}s/:id`,
+    Delete: `/${resource}s/:id`,
+    Watch: `/${resource}s/:id/watch`,
+  };
+
+  for (const [prefix, path] of Object.entries(methodMappings)) {
+    if (method.method.startsWith(prefix)) {
+      return `/api/${version}${path}`;
+    }
+  }
+
+  return `/api/${version}/${resource}s/${method.method.toLowerCase()}`;
+};
+
+const methodToHttpMethod = (method: string): string => {
+  if (method.startsWith('Create')) return 'POST';
+  if (method.startsWith('Get') || method.startsWith('List')) return 'GET';
+  if (method.startsWith('Update')) return 'PUT';
+  if (method.startsWith('Delete')) return 'DELETE';
+  return 'POST';
+};
+
+class HttpError extends Error {
+  constructor(public status: number, public body: string) {
+    super(`HTTP ${status}: ${body}`);
+  }
+}
+```
+</Tab>
+<Tab value="TCP Transport">
+```typescript title="packages/sdk-typescript/src/transports/tcp.ts"
+import { Socket } from 'node:net';
+import { TLSSocket, connect as tlsConnect } from 'node:tls';
+import type { Transport, MethodDescriptor, CallOptions } from '@org/sdk-core';
+
+interface TcpConfig {
+  host: string;
+  port: number;
+  tls?: boolean;
+  keepAlive?: boolean;
+  timeout?: number;
+}
+
+// Simple frame protocol: [4 bytes length][payload]
+const HEADER_SIZE = 4;
+
+export const TcpTransport = (config: TcpConfig): Transport => {
+  let socket: Socket | TLSSocket | null = null;
+  let requestId = 0;
+  const pendingRequests = new Map<number, {
+    resolve: (value: unknown) => void;
+    reject: (error: Error) => void;
+  }>();
+
+  const connect = (): Promise<Socket | TLSSocket> => {
+    return new Promise((resolve, reject) => {
+      if (socket?.readyState === 'open') {
+        resolve(socket);
+        return;
+      }
+
+      const sock = config.tls
+        ? tlsConnect({ host: config.host, port: config.port })
+        : new Socket();
+
+      if (!config.tls) {
+        sock.connect(config.port, config.host);
+      }
+
+      sock.on('connect', () => {
+        if (config.keepAlive) {
+          sock.setKeepAlive(true, 30000);
+        }
+        socket = sock;
+        resolve(sock);
+      });
+
+      sock.on('error', reject);
+
+      // Handle incoming data
+      let buffer = Buffer.alloc(0);
+
+      sock.on('data', (data: Buffer) => {
+        buffer = Buffer.concat([buffer, data]);
+
+        while (buffer.length >= HEADER_SIZE) {
+          const length = buffer.readUInt32BE(0);
+          if (buffer.length < HEADER_SIZE + length) break;
+
+          const payload = buffer.slice(HEADER_SIZE, HEADER_SIZE + length);
+          buffer = buffer.slice(HEADER_SIZE + length);
+
+          const message = JSON.parse(payload.toString());
+          const pending = pendingRequests.get(message.id);
+
+          if (pending) {
+            pendingRequests.delete(message.id);
+            if (message.error) {
+              pending.reject(new Error(message.error));
+            } else {
+              pending.resolve(message.data);
+            }
+          }
+        }
+      });
+    });
+  };
+
+  const send = async (data: unknown): Promise<void> => {
+    const sock = await connect();
+    const payload = Buffer.from(JSON.stringify(data));
+    const header = Buffer.alloc(HEADER_SIZE);
+    header.writeUInt32BE(payload.length, 0);
+    sock.write(Buffer.concat([header, payload]));
+  };
+
+  return {
+    async call<TReq, TRes>(
+      method: MethodDescriptor<TReq, TRes>,
+      request: TReq,
+      options?: CallOptions
+    ): Promise<TRes> {
+      const id = ++requestId;
+
+      return new Promise((resolve, reject) => {
+        const timeout = options?.timeout ?? config.timeout ?? 30000;
+        const timer = setTimeout(() => {
+          pendingRequests.delete(id);
+          reject(new Error('Request timeout'));
+        }, timeout);
+
+        pendingRequests.set(id, {
+          resolve: (data) => {
+            clearTimeout(timer);
+            resolve(method.responseType.fromJSON(data));
+          },
+          reject: (err) => {
+            clearTimeout(timer);
+            reject(err);
+          },
+        });
+
+        send({
+          id,
+          service: method.service,
+          method: method.method,
+          data: method.requestType.toJSON(request),
+          metadata: options?.metadata,
+        }).catch(reject);
+      });
+    },
+
+    async *serverStream<TReq, TRes>(
+      method: MethodDescriptor<TReq, TRes>,
+      request: TReq,
+      options?: CallOptions
+    ): AsyncIterable<TRes> {
+      const id = ++requestId;
+      const queue: TRes[] = [];
+      let done = false;
+      let error: Error | null = null;
+      let resolveNext: (() => void) | null = null;
+
+      pendingRequests.set(id, {
+        resolve: (data: any) => {
+          if (data.__done) {
+            done = true;
+          } else {
+            queue.push(method.responseType.fromJSON(data));
+          }
+          resolveNext?.();
+        },
+        reject: (err) => {
+          error = err;
+          resolveNext?.();
+        },
+      });
+
+      await send({
+        id,
+        service: method.service,
+        method: method.method,
+        data: method.requestType.toJSON(request),
+        metadata: options?.metadata,
+        streaming: true,
+      });
+
+      while (!done && !error) {
+        if (queue.length > 0) {
+          yield queue.shift()!;
+        } else {
+          await new Promise<void>(r => { resolveNext = r; });
+        }
+      }
+
+      pendingRequests.delete(id);
+      if (error) throw error;
+    },
+
+    clientStream: () => {
+      throw new Error('Not implemented');
+    },
+
+    bidiStream: () => {
+      throw new Error('Not implemented');
+    },
+
+    async close(): Promise<void> {
+      socket?.destroy();
+      socket = null;
+      pendingRequests.clear();
+    },
+  };
+};
+```
+</Tab>
+<Tab value="WebSocket Transport">
+```typescript title="packages/sdk-typescript/src/transports/websocket.ts"
+import type { Transport, MethodDescriptor, CallOptions } from '@org/sdk-core';
+
+interface WebSocketConfig {
+  url: string;
+  protocols?: string[];
+  reconnect?: boolean;
+  reconnectInterval?: number;
+}
+
+export const WebSocketTransport = (config: WebSocketConfig): Transport => {
+  let ws: WebSocket | null = null;
+  let requestId = 0;
+  const pendingRequests = new Map<number, {
+    resolve: (value: unknown) => void;
+    reject: (error: Error) => void;
+  }>();
+  const streams = new Map<number, {
+    onData: (data: unknown) => void;
+    onEnd: () => void;
+    onError: (error: Error) => void;
+  }>();
+
+  const connect = (): Promise<WebSocket> => {
+    return new Promise((resolve, reject) => {
+      if (ws?.readyState === WebSocket.OPEN) {
+        resolve(ws);
+        return;
+      }
+
+      const socket = new WebSocket(config.url, config.protocols);
+
+      socket.onopen = () => {
+        ws = socket;
+        resolve(socket);
+      };
+
+      socket.onerror = (event) => {
+        reject(new Error('WebSocket error'));
+      };
+
+      socket.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        const { id, type, data, error } = message;
+
+        if (type === 'response') {
+          const pending = pendingRequests.get(id);
+          if (pending) {
+            pendingRequests.delete(id);
+            if (error) {
+              pending.reject(new Error(error));
+            } else {
+              pending.resolve(data);
+            }
+          }
+        } else if (type === 'stream') {
+          const stream = streams.get(id);
+          if (stream) {
+            stream.onData(data);
+          }
+        } else if (type === 'stream-end') {
+          const stream = streams.get(id);
+          if (stream) {
+            streams.delete(id);
+            stream.onEnd();
+          }
+        } else if (type === 'stream-error') {
+          const stream = streams.get(id);
+          if (stream) {
+            streams.delete(id);
+            stream.onError(new Error(error));
+          }
+        }
+      };
+
+      socket.onclose = () => {
+        if (config.reconnect) {
+          setTimeout(() => connect(), config.reconnectInterval ?? 1000);
+        }
+      };
+    });
+  };
+
+  const send = async (data: unknown): Promise<void> => {
+    const socket = await connect();
+    socket.send(JSON.stringify(data));
+  };
+
+  return {
+    async call<TReq, TRes>(
+      method: MethodDescriptor<TReq, TRes>,
+      request: TReq,
+      options?: CallOptions
+    ): Promise<TRes> {
+      const id = ++requestId;
+
+      return new Promise((resolve, reject) => {
+        const timeout = options?.timeout ?? 30000;
+        const timer = setTimeout(() => {
+          pendingRequests.delete(id);
+          reject(new Error('Request timeout'));
+        }, timeout);
+
+        pendingRequests.set(id, {
+          resolve: (data) => {
+            clearTimeout(timer);
+            resolve(method.responseType.fromJSON(data));
+          },
+          reject: (err) => {
+            clearTimeout(timer);
+            reject(err);
+          },
+        });
+
+        send({
+          id,
+          type: 'call',
+          service: method.service,
+          method: method.method,
+          data: method.requestType.toJSON(request),
+          metadata: options?.metadata,
+        }).catch(reject);
+      });
+    },
+
+    async *serverStream<TReq, TRes>(
+      method: MethodDescriptor<TReq, TRes>,
+      request: TReq,
+      options?: CallOptions
+    ): AsyncIterable<TRes> {
+      const id = ++requestId;
+      const queue: TRes[] = [];
+      let done = false;
+      let error: Error | null = null;
+      let resolveNext: (() => void) | null = null;
+
+      streams.set(id, {
+        onData: (data) => {
+          queue.push(method.responseType.fromJSON(data));
+          resolveNext?.();
+        },
+        onEnd: () => {
+          done = true;
+          resolveNext?.();
+        },
+        onError: (err) => {
+          error = err;
+          resolveNext?.();
+        },
+      });
+
+      await send({
+        id,
+        type: 'stream',
+        service: method.service,
+        method: method.method,
+        data: method.requestType.toJSON(request),
+        metadata: options?.metadata,
+      });
+
+      try {
+        while (!done && !error) {
+          if (queue.length > 0) {
+            yield queue.shift()!;
+          } else {
+            await new Promise<void>(r => { resolveNext = r; });
+          }
+        }
+
+        if (error) throw error;
+      } finally {
+        streams.delete(id);
+      }
+    },
+
+    clientStream: () => {
+      throw new Error('Not implemented');
+    },
+
+    bidiStream: () => {
+      throw new Error('Not implemented');
+    },
+
+    async close(): Promise<void> {
+      ws?.close();
+      ws = null;
+      pendingRequests.clear();
+      streams.clear();
+    },
+  };
+};
+```
+</Tab>
+</Tabs>
+
+## Service Implementation Pattern
+
+Services implement the same contract interface, regardless of transport:
+
+```typescript title="apps/order-service/src/service.ts"
+import type { OrderServiceServer } from '@org/sdk-typescript/server';
+import type {
+  CreateOrderRequest,
+  CreateOrderResponse,
+  GetOrderRequest,
+  Order,
+} from '@org/sdk-typescript';
+
+// Service implementation - same interface for any transport
+export const createOrderService = (
+  deps: OrderServiceDependencies
+): OrderServiceServer => ({
+  async createOrder(request: CreateOrderRequest): Promise<CreateOrderResponse> {
+    // Validate request
+    const validation = validateCreateOrder(request);
+    if (!validation.valid) {
+      throw new ValidationError(validation.errors);
+    }
+
+    // Business logic
+    const order = await deps.orderRepository.create({
+      customerId: request.customerId,
+      items: request.items,
+      shippingAddress: request.shippingAddress,
+    });
+
+    // Publish event
+    await deps.eventBus.publish({
+      type: 'OrderCreated',
+      orderId: order.id,
+      customerId: order.customerId,
+    });
+
+    return {
+      orderId: order.id,
+      status: order.status,
+      createdAt: order.createdAt,
+    };
+  },
+
+  async getOrder(request: GetOrderRequest): Promise<Order> {
+    const order = await deps.orderRepository.findById(request.orderId);
+    
+    if (!order) {
+      throw new NotFoundError(`Order ${request.orderId} not found`);
+    }
+
+    return order;
+  },
+
+  async *watchOrder(request: WatchOrderRequest): AsyncIterable<OrderEvent> {
+    const subscription = deps.eventBus.subscribe(`order.${request.orderId}.*`);
+
+    try {
+      for await (const event of subscription) {
+        yield {
+          orderId: event.orderId,
+          previousStatus: event.previousStatus,
+          newStatus: event.newStatus,
+          timestamp: event.timestamp,
+        };
+      }
+    } finally {
+      subscription.unsubscribe();
+    }
+  },
+
+  async listOrders(request: ListOrdersRequest): Promise<ListOrdersResponse> {
+    const { orders, total } = await deps.orderRepository.findMany({
+      customerId: request.customerId,
+      status: request.status,
+      page: request.pagination?.page ?? 1,
+      pageSize: request.pagination?.pageSize ?? 20,
+    });
+
+    return {
+      orders,
+      totalCount: total,
+      page: request.pagination?.page ?? 1,
+      pageSize: request.pagination?.pageSize ?? 20,
+      hasNextPage: total > (request.pagination?.page ?? 1) * (request.pagination?.pageSize ?? 20),
+    };
+  },
+});
+```
+
+## Middleware and Interceptors
+
+```typescript title="packages/sdk-typescript/src/middleware.ts"
+type Middleware = <TReq, TRes>(
+  method: MethodDescriptor<TReq, TRes>,
+  request: TReq,
+  next: (request: TReq) => Promise<TRes>
+) => Promise<TRes>;
+
+// Logging middleware
+const loggingMiddleware: Middleware = async (method, request, next) => {
+  const start = Date.now();
+  console.log(`[${method.service}/${method.method}] Request:`, request);
+  
+  try {
+    const response = await next(request);
+    console.log(`[${method.service}/${method.method}] Response (${Date.now() - start}ms):`, response);
+    return response;
+  } catch (error) {
+    console.error(`[${method.service}/${method.method}] Error (${Date.now() - start}ms):`, error);
+    throw error;
+  }
+};
+
+// Auth middleware
+const authMiddleware = (getToken: () => string): Middleware => {
+  return async (method, request, next) => {
+    // Add auth token to metadata
+    const token = getToken();
+    return next(request);
+  };
+};
+
+// Retry middleware
+const retryMiddleware = (config: RetryConfig): Middleware => {
+  return async (method, request, next) => {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
+      try {
+        return await next(request);
+      } catch (error) {
+        lastError = error as Error;
+        if (!isRetryable(error) || attempt === config.maxRetries) {
+          throw error;
+        }
+        await delay(Math.pow(2, attempt) * 100);
+      }
+    }
+    
+    throw lastError;
+  };
+};
+
+// Compose middlewares
+const composeMiddleware = (...middlewares: Middleware[]): Middleware => {
+  return (method, request, next) => {
+    const chain = middlewares.reduceRight(
+      (acc, middleware) => (req) => middleware(method, req, acc),
+      next
+    );
+    return chain(request);
+  };
+};
+
+// Usage
+const transport = withMiddleware(
+  new GrpcTransport(config),
+  composeMiddleware(
+    loggingMiddleware,
+    authMiddleware(() => localStorage.getItem('token') ?? ''),
+    retryMiddleware({ maxRetries: 3 })
+  )
+);
+```
+
+## Error Handling
+
+```typescript title="packages/sdk-core/src/errors.ts"
+// Base SDK error
+export class SdkError extends Error {
+  constructor(
+    message: string,
+    public code: string,
+    public details?: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = 'SdkError';
+  }
+}
+
+// Specific error types
+export class NotFoundError extends SdkError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'NOT_FOUND', details);
+    this.name = 'NotFoundError';
+  }
+}
+
+export class ValidationError extends SdkError {
+  constructor(
+    public errors: Array<{ field: string; message: string }>
+  ) {
+    super('Validation failed', 'VALIDATION_ERROR', { errors });
+    this.name = 'ValidationError';
+  }
+}
+
+export class UnauthorizedError extends SdkError {
+  constructor(message = 'Unauthorized') {
+    super(message, 'UNAUTHORIZED');
+    this.name = 'UnauthorizedError';
+  }
+}
+
+export class TimeoutError extends SdkError {
+  constructor(message = 'Request timeout') {
+    super(message, 'TIMEOUT');
+    this.name = 'TimeoutError';
+  }
+}
+
+// Error mapper for different transports
+export const mapTransportError = (error: unknown): SdkError => {
+  if (error instanceof SdkError) return error;
+
+  // gRPC error codes
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const grpcError = error as { code: number; message: string };
+    switch (grpcError.code) {
+      case 5: return new NotFoundError(grpcError.message);
+      case 3: return new ValidationError([{ field: 'unknown', message: grpcError.message }]);
+      case 16: return new UnauthorizedError(grpcError.message);
+      case 4: return new TimeoutError(grpcError.message);
+    }
+  }
+
+  return new SdkError(
+    error instanceof Error ? error.message : 'Unknown error',
+    'UNKNOWN'
+  );
+};
+```
+
+## Next Steps
+
+- **[Protocol Definitions](/docs/code-quality/architecture/infrastructure-as-code/sdk-modules/protocols)** - Define contracts with Protocol Buffers and OpenAPI
+- **[TypeScript SDK](/docs/code-quality/architecture/infrastructure-as-code/sdk-modules/typescript)** - Build the TypeScript SDK implementation
+- **[Multi-Language SDKs](/docs/code-quality/architecture/infrastructure-as-code/sdk-modules/multi-language)** - Generate SDKs for Go, .NET, Python

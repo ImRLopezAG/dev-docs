@@ -1,0 +1,15 @@
+{
+  "title": "Docker",
+  "description": "Complete Docker guide covering Dockerfile, Docker Compose, and CLI commands",
+  "icon": "Container",
+  "root": true,
+  "pages": [
+    "index",
+    "---Dockerfile---",
+    "dockerfile",
+    "---Docker Compose---",
+    "compose",
+    "---CLI Commands---",
+    "cli"
+  ]
+}

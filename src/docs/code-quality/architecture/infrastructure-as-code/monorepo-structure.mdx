@@ -1,0 +1,1028 @@
+---
+title: Monorepo Structure
+description: Setting up a Turborepo/Nx workspace with apps, packages, and infrastructure in a unified repository.
+---
+
+import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { File, Files, Folder } from 'fumadocs-ui/components/files';
+import { Steps } from 'fumadocs-ui/components/steps';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+# Monorepo Structure
+
+A **monorepo** consolidates multiple applications, packages, and infrastructure configurations into a single repository. This enables code sharing, atomic changes, and coordinated releases across the entire organization.
+
+<Callout type="info">
+We use **Turborepo** for its simplicity and speed, but the same concepts apply to **Nx**, **Lerna**, or **Rush**.
+</Callout>
+
+## Workspace Configuration
+
+<Steps>
+### Initialize Turborepo Workspace
+
+```bash title="terminal"
+# Create new turborepo
+pnpm dlx create-turbo@latest organization-platform
+
+# Or add to existing project
+cd existing-project
+pnpm add turbo -D -w
+```
+
+### Configure pnpm Workspaces
+
+```yaml title="pnpm-workspace.yaml"
+packages:
+  # Applications
+  - "apps/*"
+  # Shared packages/SDKs
+  - "packages/*"
+  # Infrastructure as code
+  - "infrastructure/*"
+  # Tools and scripts
+  - "tools/*"
+```
+
+### Configure Turborepo Pipeline
+
+```json title="turbo.json"
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [
+    ".env",
+    ".env.local"
+  ],
+  "globalEnv": [
+    "NODE_ENV",
+    "CI"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "package.json", "tsconfig.json"],
+      "outputs": ["dist/**", ".next/**", "build/**"],
+      "cache": true
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "test/**", "**/*.test.ts"],
+      "outputs": ["coverage/**"],
+      "cache": true
+    },
+    "test:e2e": {
+      "dependsOn": ["build"],
+      "inputs": ["src/**", "e2e/**"],
+      "outputs": [],
+      "cache": false
+    },
+    "lint": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", ".eslintrc.*", "biome.json"],
+      "outputs": [],
+      "cache": true
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "tsconfig.json"],
+      "outputs": [],
+      "cache": true
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "persistent": true,
+      "cache": false
+    },
+    "deploy": {
+      "dependsOn": ["build", "test"],
+      "inputs": ["dist/**", "Dockerfile", "kubernetes/**"],
+      "outputs": [],
+      "cache": false
+    },
+    "db:migrate": {
+      "cache": false
+    },
+    "db:generate": {
+      "cache": false
+    }
+  }
+}
+```
+
+### Root Package Configuration
+
+```json title="package.json"
+{
+  "name": "organization-platform",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "format": "biome format --write .",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "turbo run build --filter='./packages/*' && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.0",
+    "@org/eslint-config": "workspace:*",
+    "@org/typescript-config": "workspace:*",
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}
+```
+</Steps>
+
+## Complete Directory Structure
+
+<Files>
+  <Folder name="organization-platform" defaultOpen>
+    <Folder name="apps" defaultOpen>
+      <Folder name="order-service" defaultOpen>
+        <File name="package.json" />
+        <File name="tsconfig.json" />
+        <File name="Dockerfile" />
+        <File name="docker-compose.yml" />
+        <Folder name="src">
+          <File name="index.ts" />
+          <File name="server.ts" />
+          <Folder name="routes">
+            <File name="orders.ts" />
+            <File name="health.ts" />
+          </Folder>
+          <Folder name="handlers">
+            <File name="create-order.ts" />
+            <File name="get-order.ts" />
+          </Folder>
+        </Folder>
+        <Folder name="test">
+          <File name="orders.test.ts" />
+        </Folder>
+      </Folder>
+      <Folder name="payment-service">
+        <File name="package.json" />
+        <Folder name="src">
+          <File name="index.ts" />
+        </Folder>
+      </Folder>
+      <Folder name="notification-service">
+        <File name="package.json" />
+        <Folder name="src">
+          <File name="index.ts" />
+        </Folder>
+      </Folder>
+      <Folder name="api-gateway">
+        <File name="package.json" />
+        <Folder name="src">
+          <File name="index.ts" />
+        </Folder>
+      </Folder>
+      <Folder name="admin-dashboard">
+        <File name="package.json" />
+        <Folder name="src">
+          <Folder name="app">
+            <File name="page.tsx" />
+          </Folder>
+        </Folder>
+      </Folder>
+    </Folder>
+    <Folder name="packages" defaultOpen>
+      <Folder name="core-sdk" defaultOpen>
+        <File name="package.json" />
+        <File name="tsconfig.json" />
+        <Folder name="src">
+          <File name="index.ts" />
+          <Folder name="domain">
+            <File name="entities.ts" />
+            <File name="value-objects.ts" />
+            <File name="events.ts" />
+          </Folder>
+          <Folder name="application">
+            <File name="use-cases.ts" />
+          </Folder>
+        </Folder>
+      </Folder>
+      <Folder name="events-sdk">
+        <File name="package.json" />
+        <Folder name="src">
+          <File name="index.ts" />
+          <File name="event-bus.ts" />
+          <File name="event-store.ts" />
+        </Folder>
+      </Folder>
+      <Folder name="database-sdk">
+        <File name="package.json" />
+        <Folder name="src">
+          <File name="index.ts" />
+          <File name="connection.ts" />
+          <File name="repositories.ts" />
+        </Folder>
+        <Folder name="drizzle">
+          <File name="schema.ts" />
+          <Folder name="migrations" />
+        </Folder>
+      </Folder>
+      <Folder name="auth-sdk">
+        <File name="package.json" />
+        <Folder name="src">
+          <File name="index.ts" />
+          <File name="middleware.ts" />
+          <File name="jwt.ts" />
+        </Folder>
+      </Folder>
+      <Folder name="typescript-config">
+        <File name="package.json" />
+        <File name="base.json" />
+        <File name="node.json" />
+        <File name="react.json" />
+      </Folder>
+      <Folder name="eslint-config">
+        <File name="package.json" />
+        <File name="base.js" />
+        <File name="node.js" />
+        <File name="react.js" />
+      </Folder>
+    </Folder>
+    <Folder name="infrastructure" defaultOpen>
+      <Folder name="terraform">
+        <Folder name="modules">
+          <Folder name="vpc" />
+          <Folder name="ecs" />
+          <Folder name="rds" />
+          <Folder name="lambda" />
+        </Folder>
+        <Folder name="environments">
+          <Folder name="dev" />
+          <Folder name="staging" />
+          <Folder name="production" />
+        </Folder>
+      </Folder>
+      <Folder name="kubernetes">
+        <Folder name="base">
+          <File name="namespace.yaml" />
+          <File name="configmap.yaml" />
+        </Folder>
+        <Folder name="overlays">
+          <Folder name="dev" />
+          <Folder name="staging" />
+          <Folder name="production" />
+        </Folder>
+      </Folder>
+      <Folder name="cdk">
+        <File name="package.json" />
+        <Folder name="lib">
+          <File name="api-stack.ts" />
+          <File name="database-stack.ts" />
+        </Folder>
+      </Folder>
+    </Folder>
+    <Folder name="tools">
+      <Folder name="scripts">
+        <File name="setup-dev.sh" />
+        <File name="seed-database.ts" />
+      </Folder>
+      <Folder name="generators">
+        <File name="new-service.ts" />
+        <File name="new-package.ts" />
+      </Folder>
+    </Folder>
+    <Folder name=".github">
+      <Folder name="workflows">
+        <File name="ci.yml" />
+        <File name="deploy.yml" />
+        <File name="release-sdk.yml" />
+      </Folder>
+      <File name="CODEOWNERS" />
+    </Folder>
+    <File name="package.json" />
+    <File name="pnpm-workspace.yaml" />
+    <File name="turbo.json" />
+    <File name="biome.json" />
+    <File name=".env.example" />
+    <File name="docker-compose.yml" />
+  </Folder>
+</Files>
+
+## Package Configurations
+
+<Tabs items={['App Package', 'SDK Package', 'Config Package']}>
+<Tab value="App Package">
+```json title="apps/order-service/package.json"
+{
+  "name": "@org/order-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format esm --dts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome lint src/",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "drizzle-kit migrate",
+    "db:generate": "drizzle-kit generate",
+    "docker:build": "docker build -t order-service .",
+    "docker:push": "docker push $REGISTRY/order-service:$TAG"
+  },
+  "dependencies": {
+    "@org/core-sdk": "workspace:*",
+    "@org/events-sdk": "workspace:*",
+    "@org/database-sdk": "workspace:*",
+    "@org/auth-sdk": "workspace:*",
+    "@hono/node-server": "^1.11.0",
+    "hono": "^4.4.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@org/typescript-config": "workspace:*",
+    "@org/eslint-config": "workspace:*",
+    "@types/node": "^20.14.0",
+    "tsup": "^8.1.0",
+    "tsx": "^4.15.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}
+```
+
+```json title="apps/order-service/tsconfig.json"
+{
+  "extends": "@org/typescript-config/node.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test"]
+}
+```
+
+```dockerfile title="apps/order-service/Dockerfile"
+# Build stage
+FROM node:20-alpine AS builder
+
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+
+WORKDIR /app
+
+# Copy workspace files
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json turbo.json ./
+COPY packages/ ./packages/
+COPY apps/order-service/ ./apps/order-service/
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile
+
+# Build with turbo (builds dependencies first)
+RUN pnpm turbo run build --filter=@org/order-service
+
+# Production stage
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+# Copy only production files
+COPY --from=builder /app/apps/order-service/dist ./dist
+COPY --from=builder /app/apps/order-service/package.json ./
+
+# Install production dependencies only
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+RUN pnpm install --prod --frozen-lockfile
+
+USER node
+
+EXPOSE 3000
+
+CMD ["node", "dist/index.js"]
+```
+</Tab>
+<Tab value="SDK Package">
+```json title="packages/core-sdk/package.json"
+{
+  "name": "@org/core-sdk",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./domain": {
+      "import": "./dist/domain/index.js",
+      "types": "./dist/domain/index.d.ts"
+    },
+    "./application": {
+      "import": "./dist/application/index.js",
+      "types": "./dist/application/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsup --watch",
+    "build": "tsup",
+    "test": "vitest run",
+    "lint": "biome lint src/",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@org/typescript-config": "workspace:*",
+    "tsup": "^8.1.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  }
+}
+```
+
+```typescript title="packages/core-sdk/tsup.config.ts"
+import { defineConfig } from 'tsup';
+
+export default defineConfig({
+  entry: {
+    index: 'src/index.ts',
+    'domain/index': 'src/domain/index.ts',
+    'application/index': 'src/application/index.ts',
+  },
+  format: ['esm'],
+  dts: true,
+  splitting: false,
+  sourcemap: true,
+  clean: true,
+  treeshake: true,
+  external: ['zod'],
+});
+```
+
+```json title="packages/core-sdk/tsconfig.json"
+{
+  "extends": "@org/typescript-config/node.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
+```
+</Tab>
+<Tab value="Config Package">
+```json title="packages/typescript-config/package.json"
+{
+  "name": "@org/typescript-config",
+  "version": "1.0.0",
+  "private": true,
+  "files": [
+    "*.json"
+  ],
+  "exports": {
+    "./base.json": "./base.json",
+    "./node.json": "./node.json",
+    "./react.json": "./react.json"
+  }
+}
+```
+
+```json title="packages/typescript-config/base.json"
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "strictNullChecks": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  }
+}
+```
+
+```json title="packages/typescript-config/node.json"
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./base.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "target": "ES2022",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "allowSyntheticDefaultImports": true,
+    "noEmit": true
+  }
+}
+```
+
+```json title="packages/typescript-config/react.json"
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "target": "ES2022",
+    "moduleResolution": "bundler"
+  }
+}
+```
+</Tab>
+</Tabs>
+
+## Dependency Management
+
+<Tabs items={['Internal Dependencies', 'Version Sync', 'Constraints']}>
+<Tab value="Internal Dependencies">
+```typescript title="tools/scripts/check-dependencies.ts"
+// Script to validate internal dependency versions
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+
+interface PackageJson {
+  name: string;
+  version: string;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+}
+
+const getWorkspacePackages = (rootDir: string): PackageJson[] => {
+  const packages: PackageJson[] = [];
+  const dirs = ['apps', 'packages'];
+
+  for (const dir of dirs) {
+    const fullPath = join(rootDir, dir);
+    const subdirs = readdirSync(fullPath, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => d.name);
+
+    for (const subdir of subdirs) {
+      const pkgPath = join(fullPath, subdir, 'package.json');
+      try {
+        const content = readFileSync(pkgPath, 'utf-8');
+        packages.push(JSON.parse(content));
+      } catch {
+        // Skip if no package.json
+      }
+    }
+  }
+
+  return packages;
+};
+
+const validateWorkspaceDependencies = (packages: PackageJson[]) => {
+  const errors: string[] = [];
+  const packageNames = new Set(packages.map(p => p.name));
+
+  for (const pkg of packages) {
+    const allDeps = {
+      ...pkg.dependencies,
+      ...pkg.devDependencies,
+    };
+
+    for (const [dep, version] of Object.entries(allDeps)) {
+      // Check internal packages use workspace protocol
+      if (packageNames.has(dep) && version !== 'workspace:*') {
+        errors.push(
+          `${pkg.name}: Internal package ${dep} should use "workspace:*" instead of "${version}"`
+        );
+      }
+    }
+  }
+
+  return errors;
+};
+
+// Run validation
+const packages = getWorkspacePackages(process.cwd());
+const errors = validateWorkspaceDependencies(packages);
+
+if (errors.length > 0) {
+  console.error('Dependency validation failed:');
+  errors.forEach(e => console.error(`  - ${e}`));
+  process.exit(1);
+}
+
+console.log('✓ All dependencies valid');
+```
+</Tab>
+<Tab value="Version Sync">
+```json title=".changeset/config.json"
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
+  "changelog": [
+    "@changesets/changelog-github",
+    { "repo": "organization/platform" }
+  ],
+  "commit": false,
+  "fixed": [
+    ["@org/core-sdk", "@org/events-sdk", "@org/database-sdk", "@org/auth-sdk"]
+  ],
+  "linked": [],
+  "access": "restricted",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": [
+    "@org/order-service",
+    "@org/payment-service",
+    "@org/notification-service"
+  ],
+  "___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH": {
+    "onlyUpdatePeerDependentsWhenOutOfRange": true
+  }
+}
+```
+
+```typescript title="tools/scripts/sync-versions.ts"
+// Sync versions across all packages
+import { execSync } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { glob } from 'glob';
+
+const syncSharedDependencies = async () => {
+  // Dependencies that should be the same version everywhere
+  const sharedDeps = [
+    'typescript',
+    'zod',
+    'hono',
+    'drizzle-orm',
+    'vitest',
+  ];
+
+  // Get all package.json files
+  const packageFiles = await glob('**/package.json', {
+    ignore: ['**/node_modules/**', '**/dist/**'],
+  });
+
+  // Read root package.json for canonical versions
+  const rootPkg = JSON.parse(readFileSync('package.json', 'utf-8'));
+  const rootDeps = {
+    ...rootPkg.dependencies,
+    ...rootPkg.devDependencies,
+  };
+
+  for (const file of packageFiles) {
+    const content = JSON.parse(readFileSync(file, 'utf-8'));
+    let modified = false;
+
+    for (const dep of sharedDeps) {
+      if (content.dependencies?.[dep] && rootDeps[dep]) {
+        if (content.dependencies[dep] !== rootDeps[dep]) {
+          content.dependencies[dep] = rootDeps[dep];
+          modified = true;
+        }
+      }
+      if (content.devDependencies?.[dep] && rootDeps[dep]) {
+        if (content.devDependencies[dep] !== rootDeps[dep]) {
+          content.devDependencies[dep] = rootDeps[dep];
+          modified = true;
+        }
+      }
+    }
+
+    if (modified) {
+      writeFileSync(file, JSON.stringify(content, null, 2) + '\n');
+      console.log(`Updated ${file}`);
+    }
+  }
+};
+
+syncSharedDependencies();
+```
+</Tab>
+<Tab value="Constraints">
+```javascript title="pnpm-workspace.yaml extended constraints"
+// For more complex constraints, use syncpack
+// syncpack.config.js
+module.exports = {
+  // Ensure same versions across workspace
+  versionGroups: [
+    {
+      label: 'TypeScript should be the same everywhere',
+      packages: ['**'],
+      dependencies: ['typescript'],
+      policy: 'sameRange',
+    },
+    {
+      label: 'Internal packages use workspace protocol',
+      packages: ['**'],
+      dependencies: ['@org/*'],
+      dependencyTypes: ['prod', 'dev'],
+      pinVersion: 'workspace:*',
+    },
+  ],
+  
+  // Enforce dependency types
+  semverGroups: [
+    {
+      label: 'Production deps use exact versions',
+      packages: ['apps/**'],
+      dependencyTypes: ['prod'],
+      range: '',
+    },
+    {
+      label: 'Dev deps can use caret ranges',
+      packages: ['**'],
+      dependencyTypes: ['dev'],
+      range: '^',
+    },
+  ],
+};
+```
+
+```json title="package.json scripts"
+{
+  "scripts": {
+    "deps:check": "syncpack list-mismatches",
+    "deps:fix": "syncpack fix-mismatches",
+    "deps:lint": "syncpack lint",
+    "deps:update": "pnpm update -r --interactive"
+  }
+}
+```
+</Tab>
+</Tabs>
+
+## Turbo Remote Caching
+
+```typescript title="turbo.json with remote cache"
+{
+  "$schema": "https://turbo.build/schema.json",
+  "remoteCache": {
+    "signature": true
+  },
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"],
+      "cache": true
+    }
+  }
+}
+```
+
+```yaml title=".github/workflows/ci.yml remote cache setup"
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          
+      - run: pnpm install --frozen-lockfile
+      
+      # Turbo will use remote cache automatically
+      - run: pnpm turbo run build test lint --summarize
+```
+
+## Filtering and Running Tasks
+
+```bash title="Turbo filtering examples"
+# Build everything
+pnpm turbo run build
+
+# Build specific app and its dependencies
+pnpm turbo run build --filter=@org/order-service
+
+# Build only packages (SDKs)
+pnpm turbo run build --filter='./packages/*'
+
+# Build everything except admin dashboard
+pnpm turbo run build --filter='!@org/admin-dashboard'
+
+# Build only changed packages since main
+pnpm turbo run build --filter='...[origin/main]'
+
+# Run tests for packages that depend on core-sdk
+pnpm turbo run test --filter='...@org/core-sdk'
+
+# Dev mode for specific services
+pnpm turbo run dev --filter=@org/order-service --filter=@org/api-gateway
+```
+
+## Code Generators
+
+```typescript title="tools/generators/new-service.ts"
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
+interface ServiceConfig {
+  name: string;
+  port: number;
+  dependencies: string[];
+}
+
+const generateService = async (config: ServiceConfig) => {
+  const servicePath = join(process.cwd(), 'apps', config.name);
+  
+  // Create directory structure
+  await mkdir(join(servicePath, 'src', 'routes'), { recursive: true });
+  await mkdir(join(servicePath, 'src', 'handlers'), { recursive: true });
+  await mkdir(join(servicePath, 'test'), { recursive: true });
+
+  // Generate package.json
+  const packageJson = {
+    name: `@org/${config.name}`,
+    version: '1.0.0',
+    private: true,
+    type: 'module',
+    scripts: {
+      dev: 'tsx watch src/index.ts',
+      build: 'tsup src/index.ts --format esm --dts',
+      start: 'node dist/index.js',
+      test: 'vitest run',
+      lint: 'biome lint src/',
+      typecheck: 'tsc --noEmit',
+    },
+    dependencies: {
+      ...Object.fromEntries(
+        config.dependencies.map(dep => [`@org/${dep}`, 'workspace:*'])
+      ),
+      '@hono/node-server': '^1.11.0',
+      hono: '^4.4.0',
+    },
+    devDependencies: {
+      '@org/typescript-config': 'workspace:*',
+      '@types/node': '^20.14.0',
+      tsup: '^8.1.0',
+      tsx: '^4.15.0',
+      typescript: '^5.4.0',
+      vitest: '^1.6.0',
+    },
+  };
+
+  await writeFile(
+    join(servicePath, 'package.json'),
+    JSON.stringify(packageJson, null, 2)
+  );
+
+  // Generate index.ts
+  const indexTs = `
+import { serve } from '@hono/node-server';
+import { Hono } from 'hono';
+import { logger } from 'hono/logger';
+import { cors } from 'hono/cors';
+
+const app = new Hono();
+
+app.use('*', logger());
+app.use('*', cors());
+
+app.get('/health', (c) => c.json({ status: 'healthy' }));
+
+const port = process.env.PORT ?? ${config.port};
+
+console.log(\`${config.name} running on port \${port}\`);
+
+serve({ fetch: app.fetch, port: Number(port) });
+
+export default app;
+`.trim();
+
+  await writeFile(join(servicePath, 'src', 'index.ts'), indexTs);
+
+  // Generate tsconfig.json
+  const tsconfig = {
+    extends: '@org/typescript-config/node.json',
+    compilerOptions: {
+      rootDir: 'src',
+      outDir: 'dist',
+    },
+    include: ['src/**/*'],
+    exclude: ['node_modules', 'dist'],
+  };
+
+  await writeFile(
+    join(servicePath, 'tsconfig.json'),
+    JSON.stringify(tsconfig, null, 2)
+  );
+
+  // Generate Dockerfile
+  const dockerfile = `
+FROM node:20-alpine AS builder
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+WORKDIR /app
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json turbo.json ./
+COPY packages/ ./packages/
+COPY apps/${config.name}/ ./apps/${config.name}/
+RUN pnpm install --frozen-lockfile
+RUN pnpm turbo run build --filter=@org/${config.name}
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+COPY --from=builder /app/apps/${config.name}/dist ./dist
+COPY --from=builder /app/apps/${config.name}/package.json ./
+RUN corepack enable && pnpm install --prod
+USER node
+EXPOSE ${config.port}
+CMD ["node", "dist/index.js"]
+`.trim();
+
+  await writeFile(join(servicePath, 'Dockerfile'), dockerfile);
+
+  console.log(`✓ Generated service: ${config.name}`);
+  console.log(`  Run: pnpm install && pnpm turbo run dev --filter=@org/${config.name}`);
+};
+
+// CLI usage
+const args = process.argv.slice(2);
+if (args.length < 1) {
+  console.error('Usage: pnpm generate:service <name> [--deps core-sdk,events-sdk]');
+  process.exit(1);
+}
+
+const name = args[0];
+const depsArg = args.find(a => a.startsWith('--deps='));
+const dependencies = depsArg 
+  ? depsArg.replace('--deps=', '').split(',')
+  : ['core-sdk'];
+
+generateService({ name, port: 3000, dependencies });
+```
+
+## When to Use Monorepo
+
+<Accordions>
+  <Accordion title="Benefits">
+    - **Code Sharing**: SDKs and utilities available to all apps immediately
+    - **Atomic Changes**: Update SDK and all consumers in one PR
+    - **Consistent Tooling**: Same linting, testing, and build across all packages
+    - **Simplified Dependencies**: No version conflicts between internal packages
+    - **Better Visibility**: See entire system in one place
+  </Accordion>
+  <Accordion title="Challenges">
+    - **CI Complexity**: Need smart filtering to avoid rebuilding everything
+    - **Learning Curve**: Team needs to understand workspace tooling
+    - **Repository Size**: Can grow large over time
+    - **Access Control**: Everyone can see all code (may not be desired)
+    - **Build Times**: Without caching, builds can be slow
+  </Accordion>
+</Accordions>
+
+## Next Steps
+
+- **[SDK Modules](/docs/code-quality/architecture/infrastructure-as-code/sdk-modules)** - Creating and publishing internal packages
+- **[Pipeline Orchestration](/docs/code-quality/architecture/infrastructure-as-code/pipeline-orchestration)** - CI/CD workflows for monorepos

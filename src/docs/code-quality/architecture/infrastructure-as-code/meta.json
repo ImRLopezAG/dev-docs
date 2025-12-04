@@ -1,0 +1,13 @@
+{
+  "title": "Infrastructure as Code",
+  "description": "Modular monorepo architecture with SDKs, CI/CD pipelines, and composable deployments",
+  "icon": "Server",
+  "pages": [
+    "index",
+    "monorepo-structure",
+    "sdk-modules",
+    "pipeline-orchestration",
+    "deployment-strategies",
+    "composable-architecture"
+  ]
+}

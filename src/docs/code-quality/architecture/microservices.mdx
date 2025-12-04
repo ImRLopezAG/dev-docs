@@ -1,0 +1,1027 @@
+---
+title: Microservices Architecture
+description: Build distributed systems with independent, loosely coupled services
+---
+
+# Microservices Architecture
+
+Microservices architecture structures an application as a collection of small, autonomous services that are independently deployable, scalable, and maintainable. Each service owns its data and communicates through well-defined APIs.
+
+```mermaid
+flowchart TB
+    Client[Client Apps] --> Gateway[API Gateway]
+    
+    subgraph Services["Microservices"]
+        Gateway --> US[User Service]
+        Gateway --> OS[Order Service]
+        Gateway --> PS[Product Service]
+        Gateway --> NS[Notification Service]
+    end
+    
+    subgraph Data["Data Stores"]
+        US --> UDB[(Users DB)]
+        OS --> ODB[(Orders DB)]
+        PS --> PDB[(Products DB)]
+        NS --> NQ[(Message Queue)]
+    end
+    
+    subgraph Infrastructure["Infrastructure"]
+        SD[Service Discovery]
+        Config[Config Server]
+        Monitor[Monitoring]
+    end
+    
+    Services --> SD
+    Services --> Config
+    Services --> Monitor
+```
+
+## Core Characteristics
+
+<Cards>
+  <Card title="Single Responsibility">
+    Each service focuses on one business capability and does it well.
+  </Card>
+  <Card title="Independent Deployment">
+    Services can be deployed without affecting others.
+  </Card>
+  <Card title="Decentralized Data">
+    Each service owns and manages its own database.
+  </Card>
+  <Card title="Technology Agnostic">
+    Services can use different languages, frameworks, and databases.
+  </Card>
+  <Card title="Resilience">
+    Failure in one service doesn't bring down the entire system.
+  </Card>
+  <Card title="Scalability">
+    Services can be scaled independently based on demand.
+  </Card>
+</Cards>
+
+## Service Design Patterns
+
+<Tabs items={['API Gateway', 'Service Discovery', 'Circuit Breaker', 'Saga Pattern']}>
+  <Tab value="API Gateway">
+    ### API Gateway Pattern
+    
+    Single entry point for all clients, handling routing, composition, and cross-cutting concerns.
+    
+    ```mermaid
+    flowchart LR
+        subgraph Clients
+            Web[Web App]
+            Mobile[Mobile App]
+            Third[Third Party]
+        end
+        
+        subgraph Gateway["API Gateway"]
+            Auth[Authentication]
+            Rate[Rate Limiting]
+            Route[Routing]
+            Transform[Transformation]
+        end
+        
+        subgraph Services
+            S1[Service A]
+            S2[Service B]
+            S3[Service C]
+        end
+        
+        Clients --> Gateway
+        Gateway --> Services
+    ```
+    
+    ```typescript title="gateway.ts"
+    // API Gateway with Hono
+    import { Hono } from 'hono';
+    import { jwt } from 'hono/jwt';
+    import { rateLimiter } from 'hono-rate-limiter';
+    
+    const gateway = new Hono();
+    
+    // Cross-cutting concerns
+    gateway.use('*', rateLimiter({ windowMs: 60000, max: 100 }));
+    gateway.use('/api/*', jwt({ secret: process.env.JWT_SECRET! }));
+    
+    // Route to services
+    gateway.all('/api/users/*', async (c) => {
+      const path = c.req.path.replace('/api/users', '');
+      return fetch(`${USER_SERVICE_URL}${path}`, {
+        method: c.req.method,
+        headers: c.req.raw.headers,
+        body: c.req.raw.body
+      });
+    });
+    
+    gateway.all('/api/orders/*', async (c) => {
+      const path = c.req.path.replace('/api/orders', '');
+      return fetch(`${ORDER_SERVICE_URL}${path}`, {
+        method: c.req.method,
+        headers: c.req.raw.headers,
+        body: c.req.raw.body
+      });
+    });
+    
+    // Aggregation endpoint
+    gateway.get('/api/dashboard', async (c) => {
+      const userId = c.get('jwtPayload').sub;
+      
+      const [user, orders, recommendations] = await Promise.all([
+        fetch(`${USER_SERVICE_URL}/users/${userId}`).then(r => r.json()),
+        fetch(`${ORDER_SERVICE_URL}/users/${userId}/orders`).then(r => r.json()),
+        fetch(`${PRODUCT_SERVICE_URL}/recommendations/${userId}`).then(r => r.json())
+      ]);
+      
+      return c.json({ user, orders, recommendations });
+    });
+    ```
+  </Tab>
+  
+  <Tab value="Service Discovery">
+    ### Service Discovery
+    
+    Automatically detect and locate services in a distributed system.
+    
+    ```mermaid
+    flowchart TB
+        subgraph Registry["Service Registry"]
+            SR[(Registry DB)]
+        end
+        
+        subgraph Services
+            S1[Service A<br/>192.168.1.10:3000]
+            S2[Service A<br/>192.168.1.11:3000]
+            S3[Service B<br/>192.168.1.12:4000]
+        end
+        
+        S1 -->|Register| Registry
+        S2 -->|Register| Registry
+        S3 -->|Register| Registry
+        
+        Client[Client] -->|Discover| Registry
+        Registry -->|Return healthy instances| Client
+        Client -->|Call| S1
+    ```
+    
+    ```typescript title="service-registry.ts"
+    // Simple service registry
+    type ServiceInstance = {
+      id: string;
+      name: string;
+      host: string;
+      port: number;
+      health: 'healthy' | 'unhealthy';
+      lastHeartbeat: Date;
+    };
+    
+    const serviceRegistry = {
+      instances: new Map<string, ServiceInstance[]>(),
+      
+      register: (instance: Omit<ServiceInstance, 'lastHeartbeat'>) => {
+        const existing = serviceRegistry.instances.get(instance.name) || [];
+        const updated = existing.filter(i => i.id !== instance.id);
+        updated.push({ ...instance, lastHeartbeat: new Date() });
+        serviceRegistry.instances.set(instance.name, updated);
+      },
+      
+      deregister: (serviceName: string, instanceId: string) => {
+        const existing = serviceRegistry.instances.get(serviceName) || [];
+        serviceRegistry.instances.set(
+          serviceName,
+          existing.filter(i => i.id !== instanceId)
+        );
+      },
+      
+      discover: (serviceName: string): ServiceInstance | null => {
+        const instances = serviceRegistry.instances.get(serviceName) || [];
+        const healthy = instances.filter(i => i.health === 'healthy');
+        if (healthy.length === 0) return null;
+        // Round-robin load balancing
+        return healthy[Math.floor(Math.random() * healthy.length)];
+      },
+      
+      heartbeat: (serviceName: string, instanceId: string) => {
+        const instances = serviceRegistry.instances.get(serviceName) || [];
+        const instance = instances.find(i => i.id === instanceId);
+        if (instance) instance.lastHeartbeat = new Date();
+      }
+    };
+    
+    // Service client with discovery
+    const createServiceClient = (serviceName: string) => ({
+      call: async <T>(path: string, options?: RequestInit): Promise<T> => {
+        const instance = serviceRegistry.discover(serviceName);
+        if (!instance) throw new Error(`No healthy instances of ${serviceName}`);
+        
+        const url = `http://${instance.host}:${instance.port}${path}`;
+        const response = await fetch(url, options);
+        return response.json();
+      }
+    });
+    
+    // Usage
+    const userService = createServiceClient('user-service');
+    const user = await userService.call<User>('/users/123');
+    ```
+  </Tab>
+  
+  <Tab value="Circuit Breaker">
+    ### Circuit Breaker Pattern
+    
+    Prevent cascading failures by failing fast when a service is unhealthy.
+    
+    ```mermaid
+    stateDiagram-v2
+        [*] --> Closed
+        Closed --> Open: Failure threshold exceeded
+        Open --> HalfOpen: Timeout elapsed
+        HalfOpen --> Closed: Success
+        HalfOpen --> Open: Failure
+        Closed --> Closed: Success / Failure below threshold
+    ```
+    
+    ```typescript title="circuit-breaker.ts"
+    type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+    
+    type CircuitBreakerOptions = {
+      failureThreshold: number;
+      successThreshold: number;
+      timeout: number;
+    };
+    
+    const createCircuitBreaker = <T>(
+      fn: () => Promise<T>,
+      options: CircuitBreakerOptions
+    ) => {
+      let state: CircuitState = 'CLOSED';
+      let failures = 0;
+      let successes = 0;
+      let lastFailureTime: number | null = null;
+      
+      const reset = () => {
+        failures = 0;
+        successes = 0;
+        state = 'CLOSED';
+      };
+      
+      const recordSuccess = () => {
+        failures = 0;
+        if (state === 'HALF_OPEN') {
+          successes++;
+          if (successes >= options.successThreshold) {
+            reset();
+          }
+        }
+      };
+      
+      const recordFailure = () => {
+        failures++;
+        lastFailureTime = Date.now();
+        if (failures >= options.failureThreshold) {
+          state = 'OPEN';
+        }
+      };
+      
+      return async (): Promise<T> => {
+        if (state === 'OPEN') {
+          if (Date.now() - (lastFailureTime || 0) >= options.timeout) {
+            state = 'HALF_OPEN';
+            successes = 0;
+          } else {
+            throw new Error('Circuit breaker is OPEN');
+          }
+        }
+        
+        try {
+          const result = await fn();
+          recordSuccess();
+          return result;
+        } catch (error) {
+          recordFailure();
+          throw error;
+        }
+      };
+    };
+    
+    // Usage
+    const fetchUserWithBreaker = createCircuitBreaker(
+      () => fetch('http://user-service/users/123').then(r => r.json()),
+      { failureThreshold: 5, successThreshold: 2, timeout: 30000 }
+    );
+    
+    try {
+      const user = await fetchUserWithBreaker();
+    } catch (error) {
+      // Handle fallback
+      return getCachedUser('123');
+    }
+    ```
+  </Tab>
+  
+  <Tab value="Saga Pattern">
+    ### Saga Pattern
+    
+    Manage distributed transactions across multiple services.
+    
+    ```mermaid
+    sequenceDiagram
+        participant OS as Order Service
+        participant IS as Inventory Service
+        participant PS as Payment Service
+        participant NS as Notification Service
+        
+        OS->>IS: Reserve Items
+        IS-->>OS: Items Reserved
+        OS->>PS: Process Payment
+        
+        alt Payment Success
+            PS-->>OS: Payment Confirmed
+            OS->>NS: Send Confirmation
+            NS-->>OS: Notification Sent
+        else Payment Failed
+            PS-->>OS: Payment Failed
+            OS->>IS: Release Items (Compensate)
+            IS-->>OS: Items Released
+        end
+    ```
+    
+    ```typescript title="saga.ts"
+    // Saga orchestrator
+    type SagaStep<T> = {
+      name: string;
+      execute: (context: T) => Promise<T>;
+      compensate: (context: T) => Promise<T>;
+    };
+    
+    const createSaga = <T>(steps: SagaStep<T>[]) => ({
+      execute: async (initialContext: T): Promise<T> => {
+        const executedSteps: SagaStep<T>[] = [];
+        let context = initialContext;
+        
+        try {
+          for (const step of steps) {
+            console.log(`Executing: ${step.name}`);
+            context = await step.execute(context);
+            executedSteps.push(step);
+          }
+          return context;
+        } catch (error) {
+          console.error('Saga failed, compensating...');
+          
+          // Compensate in reverse order
+          for (const step of executedSteps.reverse()) {
+            try {
+              console.log(`Compensating: ${step.name}`);
+              context = await step.compensate(context);
+            } catch (compensateError) {
+              console.error(`Compensation failed for ${step.name}`, compensateError);
+            }
+          }
+          
+          throw error;
+        }
+      }
+    });
+    
+    // Order saga example
+    type OrderContext = {
+      orderId: string;
+      userId: string;
+      items: { productId: string; quantity: number }[];
+      reservationId?: string;
+      paymentId?: string;
+    };
+    
+    const orderSaga = createSaga<OrderContext>([
+      {
+        name: 'Reserve Inventory',
+        execute: async (ctx) => {
+          const reservation = await inventoryService.reserve(ctx.items);
+          return { ...ctx, reservationId: reservation.id };
+        },
+        compensate: async (ctx) => {
+          if (ctx.reservationId) {
+            await inventoryService.release(ctx.reservationId);
+          }
+          return ctx;
+        }
+      },
+      {
+        name: 'Process Payment',
+        execute: async (ctx) => {
+          const payment = await paymentService.charge(ctx.userId, ctx.orderId);
+          return { ...ctx, paymentId: payment.id };
+        },
+        compensate: async (ctx) => {
+          if (ctx.paymentId) {
+            await paymentService.refund(ctx.paymentId);
+          }
+          return ctx;
+        }
+      },
+      {
+        name: 'Confirm Order',
+        execute: async (ctx) => {
+          await orderService.confirm(ctx.orderId);
+          await notificationService.sendOrderConfirmation(ctx.userId, ctx.orderId);
+          return ctx;
+        },
+        compensate: async (ctx) => {
+          await orderService.cancel(ctx.orderId);
+          return ctx;
+        }
+      }
+    ]);
+    
+    // Usage
+    await orderSaga.execute({
+      orderId: 'order-123',
+      userId: 'user-456',
+      items: [{ productId: 'prod-1', quantity: 2 }]
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Communication Patterns
+
+<Tabs items={['Synchronous', 'Asynchronous', 'Event-Driven']}>
+  <Tab value="Synchronous">
+    ### REST / gRPC Communication
+    
+    Direct request-response communication between services.
+    
+    ```typescript title="rest-client.ts"
+    // REST client with retry and timeout
+    const createRestClient = (baseUrl: string) => {
+      const fetchWithRetry = async (
+        path: string,
+        options: RequestInit = {},
+        retries = 3
+      ): Promise<Response> => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        
+        try {
+          const response = await fetch(`${baseUrl}${path}`, {
+            ...options,
+            signal: controller.signal,
+            headers: {
+              'Content-Type': 'application/json',
+              ...options.headers
+            }
+          });
+          
+          if (!response.ok && retries > 0) {
+            return fetchWithRetry(path, options, retries - 1);
+          }
+          
+          return response;
+        } catch (error) {
+          if (retries > 0) {
+            await new Promise(r => setTimeout(r, 1000));
+            return fetchWithRetry(path, options, retries - 1);
+          }
+          throw error;
+        } finally {
+          clearTimeout(timeout);
+        }
+      };
+      
+      return {
+        get: <T>(path: string) => 
+          fetchWithRetry(path).then(r => r.json() as Promise<T>),
+        post: <T>(path: string, body: unknown) =>
+          fetchWithRetry(path, {
+            method: 'POST',
+            body: JSON.stringify(body)
+          }).then(r => r.json() as Promise<T>),
+        put: <T>(path: string, body: unknown) =>
+          fetchWithRetry(path, {
+            method: 'PUT',
+            body: JSON.stringify(body)
+          }).then(r => r.json() as Promise<T>),
+        delete: (path: string) =>
+          fetchWithRetry(path, { method: 'DELETE' })
+      };
+    };
+    
+    // Usage
+    const userClient = createRestClient('http://user-service:3000');
+    const user = await userClient.get<User>('/users/123');
+    ```
+  </Tab>
+  
+  <Tab value="Asynchronous">
+    ### Message Queue Communication
+    
+    Decouple services using message brokers like RabbitMQ or SQS.
+    
+    ```mermaid
+    flowchart LR
+        Producer[Order Service] -->|Publish| Queue[(Message Queue)]
+        Queue -->|Subscribe| C1[Email Service]
+        Queue -->|Subscribe| C2[Inventory Service]
+        Queue -->|Subscribe| C3[Analytics Service]
+    ```
+    
+    ```typescript title="message-broker.ts"
+    // Message broker abstraction
+    type Message<T> = {
+      id: string;
+      type: string;
+      payload: T;
+      timestamp: Date;
+      correlationId?: string;
+    };
+    
+    type MessageHandler<T> = (message: Message<T>) => Promise<void>;
+    
+    const createMessageBroker = () => {
+      const handlers = new Map<string, MessageHandler<unknown>[]>();
+      
+      return {
+        publish: async <T>(type: string, payload: T, correlationId?: string) => {
+          const message: Message<T> = {
+            id: crypto.randomUUID(),
+            type,
+            payload,
+            timestamp: new Date(),
+            correlationId
+          };
+          
+          // In production, send to RabbitMQ/SQS
+          const typeHandlers = handlers.get(type) || [];
+          await Promise.all(
+            typeHandlers.map(handler => handler(message as Message<unknown>))
+          );
+        },
+        
+        subscribe: <T>(type: string, handler: MessageHandler<T>) => {
+          const existing = handlers.get(type) || [];
+          handlers.set(type, [...existing, handler as MessageHandler<unknown>]);
+          
+          return () => {
+            const current = handlers.get(type) || [];
+            handlers.set(type, current.filter(h => h !== handler));
+          };
+        }
+      };
+    };
+    
+    // Usage
+    const broker = createMessageBroker();
+    
+    // Publisher (Order Service)
+    await broker.publish('order.created', {
+      orderId: '123',
+      userId: 'user-456',
+      items: [{ productId: 'prod-1', quantity: 2 }]
+    });
+    
+    // Subscriber (Email Service)
+    broker.subscribe<OrderCreatedPayload>('order.created', async (message) => {
+      await sendOrderConfirmationEmail(message.payload.userId, message.payload.orderId);
+    });
+    
+    // Subscriber (Inventory Service)
+    broker.subscribe<OrderCreatedPayload>('order.created', async (message) => {
+      await updateInventory(message.payload.items);
+    });
+    ```
+  </Tab>
+  
+  <Tab value="Event-Driven">
+    ### Event Sourcing
+    
+    Store state changes as a sequence of events.
+    
+    ```typescript title="event-store.ts"
+    // Event store
+    type Event<T = unknown> = {
+      id: string;
+      aggregateId: string;
+      type: string;
+      payload: T;
+      version: number;
+      timestamp: Date;
+    };
+    
+    const createEventStore = () => {
+      const events: Event[] = [];
+      
+      return {
+        append: async (event: Omit<Event, 'id' | 'timestamp'>) => {
+          const newEvent: Event = {
+            ...event,
+            id: crypto.randomUUID(),
+            timestamp: new Date()
+          };
+          events.push(newEvent);
+          return newEvent;
+        },
+        
+        getEvents: (aggregateId: string, fromVersion = 0) => {
+          return events
+            .filter(e => e.aggregateId === aggregateId && e.version > fromVersion)
+            .sort((a, b) => a.version - b.version);
+        },
+        
+        getAllEvents: (fromTimestamp?: Date) => {
+          return events
+            .filter(e => !fromTimestamp || e.timestamp > fromTimestamp)
+            .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        }
+      };
+    };
+    
+    // Aggregate that rebuilds state from events
+    type OrderState = {
+      id: string;
+      status: 'pending' | 'confirmed' | 'shipped' | 'cancelled';
+      items: { productId: string; quantity: number }[];
+      total: number;
+    };
+    
+    const rebuildOrder = (events: Event[]): OrderState | null => {
+      return events.reduce<OrderState | null>((state, event) => {
+        switch (event.type) {
+          case 'OrderCreated':
+            return {
+              id: event.aggregateId,
+              status: 'pending',
+              items: event.payload.items,
+              total: event.payload.total
+            };
+          case 'OrderConfirmed':
+            return state ? { ...state, status: 'confirmed' } : null;
+          case 'OrderShipped':
+            return state ? { ...state, status: 'shipped' } : null;
+          case 'OrderCancelled':
+            return state ? { ...state, status: 'cancelled' } : null;
+          default:
+            return state;
+        }
+      }, null);
+    };
+    ```
+  </Tab>
+</Tabs>
+
+## Service Structure
+
+<Files>
+  <Folder name="user-service" defaultOpen>
+    <File name="package.json" />
+    <File name="Dockerfile" />
+    <File name="docker-compose.yml" />
+    <Folder name="src" defaultOpen>
+      <File name="index.ts" />
+      <File name="app.ts" />
+      <Folder name="api">
+        <File name="routes.ts" />
+        <File name="handlers.ts" />
+        <File name="middleware.ts" />
+      </Folder>
+      <Folder name="domain">
+        <File name="user.entity.ts" />
+        <File name="user.service.ts" />
+        <File name="user.repository.ts" />
+      </Folder>
+      <Folder name="events">
+        <File name="publisher.ts" />
+        <File name="handlers.ts" />
+      </Folder>
+      <Folder name="infrastructure">
+        <File name="database.ts" />
+        <File name="cache.ts" />
+        <File name="messaging.ts" />
+      </Folder>
+    </Folder>
+    <Folder name="tests">
+      <File name="unit.test.ts" />
+      <File name="integration.test.ts" />
+    </Folder>
+  </Folder>
+</Files>
+
+## Data Management
+
+<Callout type="warn">
+  Each microservice should own its data. Never share databases between services!
+</Callout>
+
+```mermaid
+flowchart TB
+    subgraph Wrong["❌ Shared Database (Anti-pattern)"]
+        S1[Service A] --> DB1[(Shared DB)]
+        S2[Service B] --> DB1
+        S3[Service C] --> DB1
+    end
+    
+    subgraph Right["✅ Database per Service"]
+        S4[Service A] --> DB2[(DB A)]
+        S5[Service B] --> DB3[(DB B)]
+        S6[Service C] --> DB4[(DB C)]
+    end
+```
+
+### Data Consistency Strategies
+
+| Strategy | Use Case | Consistency | Complexity |
+|----------|----------|-------------|------------|
+| **Saga** | Distributed transactions | Eventual | High |
+| **Event Sourcing** | Audit trails, replay | Eventual | High |
+| **Two-Phase Commit** | Strong consistency needed | Strong | Very High |
+| **CQRS** | High read/write ratio | Eventual | Medium |
+
+## Deployment Patterns
+
+<Tabs items={['Kubernetes', 'Docker Compose', 'Serverless']}>
+  <Tab value="Kubernetes">
+    ```yaml title="user-service-deployment.yaml"
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: user-service
+      labels:
+        app: user-service
+    spec:
+      replicas: 3
+      selector:
+        matchLabels:
+          app: user-service
+      template:
+        metadata:
+          labels:
+            app: user-service
+        spec:
+          containers:
+          - name: user-service
+            image: myregistry/user-service:latest
+            ports:
+            - containerPort: 3000
+            env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: user-service-secrets
+                  key: database-url
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "100m"
+              limits:
+                memory: "256Mi"
+                cpu: "500m"
+            livenessProbe:
+              httpGet:
+                path: /health
+                port: 3000
+              initialDelaySeconds: 10
+              periodSeconds: 5
+            readinessProbe:
+              httpGet:
+                path: /ready
+                port: 3000
+              initialDelaySeconds: 5
+              periodSeconds: 3
+    ---
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: user-service
+    spec:
+      selector:
+        app: user-service
+      ports:
+      - port: 80
+        targetPort: 3000
+      type: ClusterIP
+    ```
+  </Tab>
+  
+  <Tab value="Docker Compose">
+    ```yaml title="docker-compose.yml"
+    version: '3.8'
+    
+    services:
+      api-gateway:
+        build: ./gateway
+        ports:
+          - "8080:8080"
+        depends_on:
+          - user-service
+          - order-service
+          - product-service
+        environment:
+          - USER_SERVICE_URL=http://user-service:3000
+          - ORDER_SERVICE_URL=http://order-service:3001
+          - PRODUCT_SERVICE_URL=http://product-service:3002
+    
+      user-service:
+        build: ./services/user
+        ports:
+          - "3000:3000"
+        environment:
+          - DATABASE_URL=postgresql://postgres:password@user-db:5432/users
+          - REDIS_URL=redis://redis:6379
+        depends_on:
+          - user-db
+          - redis
+    
+      order-service:
+        build: ./services/order
+        ports:
+          - "3001:3001"
+        environment:
+          - DATABASE_URL=postgresql://postgres:password@order-db:5432/orders
+          - RABBITMQ_URL=amqp://rabbitmq:5672
+        depends_on:
+          - order-db
+          - rabbitmq
+    
+      product-service:
+        build: ./services/product
+        ports:
+          - "3002:3002"
+        environment:
+          - DATABASE_URL=postgresql://postgres:password@product-db:5432/products
+    
+      user-db:
+        image: postgres:15-alpine
+        environment:
+          - POSTGRES_DB=users
+          - POSTGRES_PASSWORD=password
+        volumes:
+          - user-data:/var/lib/postgresql/data
+    
+      order-db:
+        image: postgres:15-alpine
+        environment:
+          - POSTGRES_DB=orders
+          - POSTGRES_PASSWORD=password
+        volumes:
+          - order-data:/var/lib/postgresql/data
+    
+      product-db:
+        image: postgres:15-alpine
+        environment:
+          - POSTGRES_DB=products
+          - POSTGRES_PASSWORD=password
+        volumes:
+          - product-data:/var/lib/postgresql/data
+    
+      redis:
+        image: redis:7-alpine
+    
+      rabbitmq:
+        image: rabbitmq:3-management-alpine
+        ports:
+          - "15672:15672"
+    
+    volumes:
+      user-data:
+      order-data:
+      product-data:
+    ```
+  </Tab>
+  
+  <Tab value="Serverless">
+    ```typescript title="sst.config.ts"
+    // AWS Lambda microservice deployment with SST
+    export default {
+      config() {
+        return { name: "microservices", region: "us-east-1" };
+      },
+      stacks(app) {
+        app.stack(function API({ stack }) {
+          // User Service
+          const userService = new Function(stack, "UserService", {
+            handler: "services/user/handler.main",
+            environment: {
+              TABLE_NAME: userTable.tableName,
+            },
+          });
+          
+          // Order Service
+          const orderService = new Function(stack, "OrderService", {
+            handler: "services/order/handler.main",
+            environment: {
+              TABLE_NAME: orderTable.tableName,
+              USER_SERVICE_URL: userApi.url,
+            },
+          });
+          
+          // API Gateway
+          const api = new Api(stack, "Api", {
+            routes: {
+              "GET /users/{id}": userService,
+              "POST /users": userService,
+              "GET /orders/{id}": orderService,
+              "POST /orders": orderService,
+            },
+          });
+          
+          return { api };
+        });
+      },
+    };
+    ```
+  </Tab>
+</Tabs>
+
+## Observability
+
+### The Three Pillars
+
+```mermaid
+flowchart LR
+    subgraph Observability
+        L[Logs] --> A[Analysis]
+        M[Metrics] --> A
+        T[Traces] --> A
+    end
+    
+    A --> Dashboard[Dashboards]
+    A --> Alerts[Alerting]
+    A --> Debug[Debugging]
+```
+
+```typescript title="tracing.ts"
+// Distributed tracing
+const createTracer = () => {
+  return {
+    startSpan: (name: string, parentId?: string) => {
+      const spanId = crypto.randomUUID();
+      const traceId = parentId ? parentId.split(':')[0] : crypto.randomUUID();
+      
+      return {
+        id: `${traceId}:${spanId}`,
+        name,
+        startTime: Date.now(),
+        end: (status: 'ok' | 'error' = 'ok') => {
+          console.log(JSON.stringify({
+            traceId,
+            spanId,
+            parentId,
+            name,
+            duration: Date.now() - Date.now(),
+            status
+          }));
+        }
+      };
+    }
+  };
+};
+
+// Usage in service
+const tracer = createTracer();
+
+app.use('*', async (c, next) => {
+  const parentTraceId = c.req.header('x-trace-id');
+  const span = tracer.startSpan('http-request', parentTraceId);
+  
+  c.set('traceId', span.id);
+  c.header('x-trace-id', span.id);
+  
+  try {
+    await next();
+    span.end('ok');
+  } catch (error) {
+    span.end('error');
+    throw error;
+  }
+});
+```
+
+## When to Use Microservices
+
+<Cards>
+  <Card title="✅ Good For">
+    - **Large teams** (20+ developers)
+    - **Complex domains** - Multiple bounded contexts
+    - **Independent scaling** - Different resource needs
+    - **Technology diversity** - Best tool for each job
+    - **Frequent deployments** - Reduce blast radius
+    - **High availability** - Fault isolation
+  </Card>
+  <Card title="❌ Avoid When">
+    - **Small teams** - Operational overhead
+    - **Unclear boundaries** - Leads to distributed monolith
+    - **Tight coupling** - Constant cross-service changes
+    - **Limited DevOps** - Complex infrastructure
+    - **Early-stage products** - Requirements still evolving
+  </Card>
+</Cards>
+
+## Summary
+
+Microservices offer tremendous benefits for the right use cases but come with significant complexity. Key takeaways:
+
+1. **Start with clear boundaries** - Use Domain-Driven Design
+2. **Embrace eventual consistency** - Not everything needs ACID
+3. **Invest in infrastructure** - CI/CD, monitoring, service mesh
+4. **Design for failure** - Circuit breakers, retries, fallbacks
+5. **Consider starting with a modular monolith** - Extract services as needed

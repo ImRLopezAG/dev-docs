@@ -1,0 +1,13 @@
+{
+  "title": "SDK Modules",
+  "description": "Creating language-agnostic SDKs with protocol-based communication",
+  "icon": "Package",
+  "pages": [
+    "index",
+    "architecture",
+    "protocols",
+    "typescript",
+    "multi-language",
+    "versioning"
+  ]
+}

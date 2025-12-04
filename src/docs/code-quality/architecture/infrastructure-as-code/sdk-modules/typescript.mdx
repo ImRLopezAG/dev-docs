@@ -1,0 +1,1100 @@
+---
+title: TypeScript SDK
+description: Building type-safe TypeScript SDKs for Node.js, Bun, Deno, and browser environments.
+---
+
+import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { File, Files, Folder } from 'fumadocs-ui/components/files';
+import { Steps } from 'fumadocs-ui/components/steps';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+# TypeScript SDK
+
+The TypeScript SDK provides **type-safe clients** for all services, supporting multiple runtimes (Node.js, Bun, Deno, browsers) and protocols (gRPC, HTTP, WebSocket).
+
+<Callout type="info">
+The SDK separates **generated code** (from protos) from **handwritten code** (transports, utilities). Generated code is never manually edited.
+</Callout>
+
+## Package Structure
+
+<Files>
+  <Folder name="packages/sdk-typescript" defaultOpen>
+    <File name="package.json" />
+    <File name="tsconfig.json" />
+    <File name="tsup.config.ts" />
+    <Folder name="src" defaultOpen>
+      <File name="index.ts" />
+      <Folder name="generated">
+        <File name="order.ts" />
+        <File name="payment.ts" />
+        <File name="common.ts" />
+        <File name="index.ts" />
+      </Folder>
+      <Folder name="clients">
+        <File name="order-client.ts" />
+        <File name="payment-client.ts" />
+        <File name="index.ts" />
+      </Folder>
+      <Folder name="transports">
+        <File name="transport.ts" />
+        <File name="grpc.ts" />
+        <File name="http.ts" />
+        <File name="websocket.ts" />
+        <File name="index.ts" />
+      </Folder>
+      <Folder name="middleware">
+        <File name="auth.ts" />
+        <File name="logging.ts" />
+        <File name="retry.ts" />
+        <File name="index.ts" />
+      </Folder>
+      <Folder name="errors">
+        <File name="base.ts" />
+        <File name="mapper.ts" />
+        <File name="index.ts" />
+      </Folder>
+      <Folder name="utils">
+        <File name="validation.ts" />
+        <File name="serialization.ts" />
+        <File name="index.ts" />
+      </Folder>
+    </Folder>
+    <Folder name="test">
+      <File name="order-client.test.ts" />
+      <File name="transports.test.ts" />
+    </Folder>
+  </Folder>
+</Files>
+
+## Package Configuration
+
+```json title="packages/sdk-typescript/package.json"
+{
+  "name": "@org/sdk-typescript",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./clients": {
+      "import": "./dist/clients/index.js",
+      "types": "./dist/clients/index.d.ts"
+    },
+    "./transports": {
+      "import": "./dist/transports/index.js",
+      "types": "./dist/transports/index.d.ts"
+    },
+    "./transports/grpc": {
+      "import": "./dist/transports/grpc.js",
+      "types": "./dist/transports/grpc.d.ts"
+    },
+    "./transports/http": {
+      "import": "./dist/transports/http.js",
+      "types": "./dist/transports/http.d.ts"
+    },
+    "./transports/websocket": {
+      "import": "./dist/transports/websocket.js",
+      "types": "./dist/transports/websocket.d.ts"
+    },
+    "./middleware": {
+      "import": "./dist/middleware/index.js",
+      "types": "./dist/middleware/index.d.ts"
+    },
+    "./errors": {
+      "import": "./dist/errors/index.js",
+      "types": "./dist/errors/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "dev": "tsup --watch",
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome lint src/",
+    "typecheck": "tsc --noEmit",
+    "generate": "buf generate --template ../proto/buf.gen.yaml"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^1.10.0",
+    "@connectrpc/connect": "^1.4.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "^1.32.0",
+    "@grpc/grpc-js": "^1.10.0",
+    "@org/typescript-config": "workspace:*",
+    "@types/node": "^20.14.0",
+    "tsup": "^8.1.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "peerDependencies": {
+    "@grpc/grpc-js": "^1.10.0"
+  },
+  "peerDependenciesMeta": {
+    "@grpc/grpc-js": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  }
+}
+```
+
+## Core Types
+
+```typescript title="packages/sdk-typescript/src/transports/transport.ts"
+import type { Message, MessageType } from '@bufbuild/protobuf';
+
+// Method descriptor from generated code
+export interface MethodDescriptor<TReq extends Message, TRes extends Message> {
+  readonly service: string;
+  readonly method: string;
+  readonly requestType: MessageType<TReq>;
+  readonly responseType: MessageType<TRes>;
+  readonly streaming: StreamingType;
+  readonly idempotent?: boolean;
+}
+
+export type StreamingType = 'unary' | 'server' | 'client' | 'bidi';
+
+// Call options for each request
+export interface CallOptions {
+  /** Request timeout in milliseconds */
+  timeout?: number;
+  /** Custom metadata/headers */
+  metadata?: Record<string, string>;
+  /** Abort signal for cancellation */
+  signal?: AbortSignal;
+  /** Override retry policy for this call */
+  retry?: RetryPolicy;
+}
+
+export interface RetryPolicy {
+  maxRetries: number;
+  backoff: 'exponential' | 'linear' | 'constant';
+  initialDelay: number;
+  maxDelay: number;
+  retryableErrors: string[];
+}
+
+// Transport interface - all protocols implement this
+export interface Transport {
+  /** Unary request/response call */
+  unary<TReq extends Message, TRes extends Message>(
+    method: MethodDescriptor<TReq, TRes>,
+    request: TReq,
+    options?: CallOptions
+  ): Promise<TRes>;
+
+  /** Server streaming call */
+  serverStream<TReq extends Message, TRes extends Message>(
+    method: MethodDescriptor<TReq, TRes>,
+    request: TReq,
+    options?: CallOptions
+  ): AsyncIterable<TRes>;
+
+  /** Client streaming call */
+  clientStream<TReq extends Message, TRes extends Message>(
+    method: MethodDescriptor<TReq, TRes>,
+    options?: CallOptions
+  ): ClientStreamCall<TReq, TRes>;
+
+  /** Bidirectional streaming call */
+  bidiStream<TReq extends Message, TRes extends Message>(
+    method: MethodDescriptor<TReq, TRes>,
+    options?: CallOptions
+  ): BidiStreamCall<TReq, TRes>;
+
+  /** Close transport and cleanup resources */
+  close(): Promise<void>;
+}
+
+export interface ClientStreamCall<TReq, TRes> {
+  send(request: TReq): Promise<void>;
+  close(): Promise<TRes>;
+  cancel(): void;
+}
+
+export interface BidiStreamCall<TReq, TRes> {
+  send(request: TReq): Promise<void>;
+  close(): void;
+  cancel(): void;
+  [Symbol.asyncIterator](): AsyncIterator<TRes>;
+}
+
+// Transport with middleware support
+export interface TransportWithMiddleware extends Transport {
+  use(middleware: Middleware): TransportWithMiddleware;
+}
+
+export type Middleware = <TReq extends Message, TRes extends Message>(
+  method: MethodDescriptor<TReq, TRes>,
+  request: TReq,
+  options: CallOptions | undefined,
+  next: (request: TReq, options?: CallOptions) => Promise<TRes>
+) => Promise<TRes>;
+```
+
+## Generated Client Types
+
+```typescript title="packages/sdk-typescript/src/generated/order.ts"
+// Auto-generated from order.proto - DO NOT EDIT
+import { Message, proto3 } from '@bufbuild/protobuf';
+import { Money, Address, PaginationRequest, PaginationResponse } from './common';
+
+// Enum
+export const OrderStatus = {
+  UNSPECIFIED: 0,
+  DRAFT: 1,
+  PENDING: 2,
+  CONFIRMED: 3,
+  PROCESSING: 4,
+  SHIPPED: 5,
+  DELIVERED: 6,
+  CANCELLED: 7,
+  REFUNDED: 8,
+} as const;
+
+export type OrderStatus = typeof OrderStatus[keyof typeof OrderStatus];
+
+// Messages
+export interface Order {
+  id: string;
+  orderNumber: string;
+  customerId: string;
+  items: OrderItem[];
+  status: OrderStatus;
+  totals: OrderTotals;
+  shippingAddress?: Address;
+  billingAddress?: Address;
+  createdAt?: Date;
+  updatedAt?: Date;
+  metadata: Record<string, string>;
+}
+
+export interface OrderItem {
+  id: string;
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  unitPrice: Money;
+  lineTotal: Money;
+  attributes: Record<string, string>;
+}
+
+export interface OrderTotals {
+  subtotal: Money;
+  tax: Money;
+  shipping: Money;
+  discount: Money;
+  total: Money;
+}
+
+export interface CreateOrderRequest {
+  customerId: string;
+  items: CreateOrderItem[];
+  shippingAddress?: Address;
+  billingAddress?: Address;
+  metadata?: Record<string, string>;
+  idempotencyKey?: string;
+}
+
+export interface CreateOrderItem {
+  productId: string;
+  quantity: number;
+  attributes?: Record<string, string>;
+}
+
+export interface CreateOrderResponse {
+  orderId: string;
+  orderNumber: string;
+  status: OrderStatus;
+  createdAt: Date;
+}
+
+export interface GetOrderRequest {
+  orderId: string;
+  include?: string[];
+}
+
+export interface ListOrdersRequest {
+  customerId?: string;
+  statuses?: OrderStatus[];
+  createdAfter?: Date;
+  createdBefore?: Date;
+  pagination?: PaginationRequest;
+  sortBy?: string;
+  sortDirection?: 'ASC' | 'DESC';
+}
+
+export interface ListOrdersResponse {
+  orders: Order[];
+  pagination: PaginationResponse;
+}
+
+export interface UpdateOrderRequest {
+  orderId: string;
+  shippingAddress?: Address;
+  billingAddress?: Address;
+  metadata?: Record<string, string>;
+  updateMask?: string[];
+}
+
+export interface CancelOrderRequest {
+  orderId: string;
+  reason?: string;
+  requestRefund?: boolean;
+}
+
+export interface CancelOrderResponse {
+  orderId: string;
+  status: OrderStatus;
+  refundId?: string;
+}
+
+export interface WatchOrderRequest {
+  orderId: string;
+}
+
+export interface OrderEvent {
+  orderId: string;
+  eventType: string;
+  previousStatus: OrderStatus;
+  newStatus: OrderStatus;
+  timestamp: Date;
+  data: Record<string, string>;
+}
+
+// Service definition
+export const OrderServiceDefinition = {
+  typeName: 'org.order.v1.OrderService',
+  methods: {
+    createOrder: {
+      name: 'CreateOrder',
+      requestType: {} as CreateOrderRequest,
+      responseType: {} as CreateOrderResponse,
+      streaming: 'unary' as const,
+    },
+    getOrder: {
+      name: 'GetOrder',
+      requestType: {} as GetOrderRequest,
+      responseType: {} as Order,
+      streaming: 'unary' as const,
+    },
+    listOrders: {
+      name: 'ListOrders',
+      requestType: {} as ListOrdersRequest,
+      responseType: {} as ListOrdersResponse,
+      streaming: 'unary' as const,
+    },
+    updateOrder: {
+      name: 'UpdateOrder',
+      requestType: {} as UpdateOrderRequest,
+      responseType: {} as Order,
+      streaming: 'unary' as const,
+    },
+    cancelOrder: {
+      name: 'CancelOrder',
+      requestType: {} as CancelOrderRequest,
+      responseType: {} as CancelOrderResponse,
+      streaming: 'unary' as const,
+    },
+    watchOrder: {
+      name: 'WatchOrder',
+      requestType: {} as WatchOrderRequest,
+      responseType: {} as OrderEvent,
+      streaming: 'server' as const,
+    },
+  },
+} as const;
+```
+
+## Client Implementation
+
+```typescript title="packages/sdk-typescript/src/clients/order-client.ts"
+import type { Transport, CallOptions } from '../transports/transport';
+import type {
+  CreateOrderRequest,
+  CreateOrderResponse,
+  GetOrderRequest,
+  Order,
+  ListOrdersRequest,
+  ListOrdersResponse,
+  UpdateOrderRequest,
+  CancelOrderRequest,
+  CancelOrderResponse,
+  WatchOrderRequest,
+  OrderEvent,
+  OrderServiceDefinition,
+} from '../generated/order';
+
+export interface OrderClient {
+  /** Create a new order */
+  createOrder(
+    request: CreateOrderRequest,
+    options?: CallOptions
+  ): Promise<CreateOrderResponse>;
+
+  /** Get order by ID */
+  getOrder(
+    request: GetOrderRequest,
+    options?: CallOptions
+  ): Promise<Order>;
+
+  /** List orders with filtering and pagination */
+  listOrders(
+    request: ListOrdersRequest,
+    options?: CallOptions
+  ): Promise<ListOrdersResponse>;
+
+  /** Update an existing order */
+  updateOrder(
+    request: UpdateOrderRequest,
+    options?: CallOptions
+  ): Promise<Order>;
+
+  /** Cancel an order */
+  cancelOrder(
+    request: CancelOrderRequest,
+    options?: CallOptions
+  ): Promise<CancelOrderResponse>;
+
+  /** Stream order status updates */
+  watchOrder(
+    request: WatchOrderRequest,
+    options?: CallOptions
+  ): AsyncIterable<OrderEvent>;
+}
+
+/**
+ * Create an Order service client
+ * @param transport - Transport implementation (gRPC, HTTP, etc.)
+ * @returns Type-safe OrderClient
+ */
+export const createOrderClient = (transport: Transport): OrderClient => {
+  const service = 'org.order.v1.OrderService';
+
+  return {
+    createOrder: (request, options) =>
+      transport.unary(
+        {
+          service,
+          method: 'CreateOrder',
+          requestType: {} as any,
+          responseType: {} as any,
+          streaming: 'unary',
+        },
+        request as any,
+        options
+      ) as Promise<CreateOrderResponse>,
+
+    getOrder: (request, options) =>
+      transport.unary(
+        {
+          service,
+          method: 'GetOrder',
+          requestType: {} as any,
+          responseType: {} as any,
+          streaming: 'unary',
+        },
+        request as any,
+        options
+      ) as Promise<Order>,
+
+    listOrders: (request, options) =>
+      transport.unary(
+        {
+          service,
+          method: 'ListOrders',
+          requestType: {} as any,
+          responseType: {} as any,
+          streaming: 'unary',
+        },
+        request as any,
+        options
+      ) as Promise<ListOrdersResponse>,
+
+    updateOrder: (request, options) =>
+      transport.unary(
+        {
+          service,
+          method: 'UpdateOrder',
+          requestType: {} as any,
+          responseType: {} as any,
+          streaming: 'unary',
+        },
+        request as any,
+        options
+      ) as Promise<Order>,
+
+    cancelOrder: (request, options) =>
+      transport.unary(
+        {
+          service,
+          method: 'CancelOrder',
+          requestType: {} as any,
+          responseType: {} as any,
+          streaming: 'unary',
+        },
+        request as any,
+        options
+      ) as Promise<CancelOrderResponse>,
+
+    watchOrder: (request, options) =>
+      transport.serverStream(
+        {
+          service,
+          method: 'WatchOrder',
+          requestType: {} as any,
+          responseType: {} as any,
+          streaming: 'server',
+        },
+        request as any,
+        options
+      ) as AsyncIterable<OrderEvent>,
+  };
+};
+```
+
+## SDK Factory
+
+```typescript title="packages/sdk-typescript/src/index.ts"
+// Re-export all generated types
+export * from './generated';
+
+// Re-export clients
+export * from './clients';
+
+// Re-export transports
+export * from './transports';
+
+// Re-export middleware
+export * from './middleware';
+
+// Re-export errors
+export * from './errors';
+
+// SDK Factory for easy setup
+import type { Transport } from './transports/transport';
+import { createOrderClient, type OrderClient } from './clients/order-client';
+import { createPaymentClient, type PaymentClient } from './clients/payment-client';
+import { createNotificationClient, type NotificationClient } from './clients/notification-client';
+
+export interface SdkClients {
+  order: OrderClient;
+  payment: PaymentClient;
+  notification: NotificationClient;
+}
+
+export interface SdkConfig {
+  transport: Transport;
+}
+
+/**
+ * Create SDK with all service clients
+ * 
+ * @example
+ * ```ts
+ * import { createSdk } from '@org/sdk-typescript';
+ * import { createHttpTransport } from '@org/sdk-typescript/transports/http';
+ * 
+ * const sdk = createSdk({
+ *   transport: createHttpTransport({ baseUrl: 'https://api.org.com' })
+ * });
+ * 
+ * const order = await sdk.order.createOrder({
+ *   customerId: 'cust-123',
+ *   items: [{ productId: 'prod-456', quantity: 2 }]
+ * });
+ * ```
+ */
+export const createSdk = (config: SdkConfig): SdkClients => {
+  return {
+    order: createOrderClient(config.transport),
+    payment: createPaymentClient(config.transport),
+    notification: createNotificationClient(config.transport),
+  };
+};
+
+// Convenience function for creating configured SDK
+import { createHttpTransport, type HttpTransportConfig } from './transports/http';
+import { createGrpcTransport, type GrpcTransportConfig } from './transports/grpc';
+import { authMiddleware } from './middleware/auth';
+import { loggingMiddleware } from './middleware/logging';
+import { retryMiddleware } from './middleware/retry';
+
+export interface CreateSdkOptions {
+  /** Base URL for HTTP transport */
+  baseUrl?: string;
+  /** gRPC host for gRPC transport */
+  grpcHost?: string;
+  /** Auth token or token provider */
+  auth?: string | (() => string | Promise<string>);
+  /** Enable request logging */
+  logging?: boolean;
+  /** Retry configuration */
+  retry?: {
+    maxRetries?: number;
+    retryableErrors?: string[];
+  };
+}
+
+export const createConfiguredSdk = (options: CreateSdkOptions): SdkClients => {
+  // Create transport based on config
+  let transport: Transport;
+
+  if (options.grpcHost) {
+    transport = createGrpcTransport({
+      host: options.grpcHost,
+    });
+  } else if (options.baseUrl) {
+    transport = createHttpTransport({
+      baseUrl: options.baseUrl,
+    });
+  } else {
+    throw new Error('Either baseUrl or grpcHost must be provided');
+  }
+
+  // Apply middleware
+  if (options.auth) {
+    const getToken = typeof options.auth === 'function' 
+      ? options.auth 
+      : () => options.auth as string;
+    transport = withMiddleware(transport, authMiddleware(getToken));
+  }
+
+  if (options.logging) {
+    transport = withMiddleware(transport, loggingMiddleware());
+  }
+
+  if (options.retry) {
+    transport = withMiddleware(transport, retryMiddleware(options.retry));
+  }
+
+  return createSdk({ transport });
+};
+
+// Helper to apply middleware
+const withMiddleware = (transport: Transport, middleware: any): Transport => {
+  // Implementation wraps transport with middleware
+  return transport;
+};
+```
+
+## Usage Examples
+
+<Tabs items={['Basic Usage', 'With Middleware', 'Streaming', 'Error Handling']}>
+<Tab value="Basic Usage">
+```typescript title="apps/api-gateway/src/routes/orders.ts"
+import { Hono } from 'hono';
+import { createSdk } from '@org/sdk-typescript';
+import { createHttpTransport } from '@org/sdk-typescript/transports/http';
+
+const sdk = createSdk({
+  transport: createHttpTransport({
+    baseUrl: process.env.ORDER_SERVICE_URL!,
+    headers: {
+      'X-Service': 'api-gateway',
+    },
+  }),
+});
+
+const app = new Hono();
+
+// Create order
+app.post('/orders', async (c) => {
+  const body = await c.req.json();
+  
+  const response = await sdk.order.createOrder({
+    customerId: body.customerId,
+    items: body.items.map((item: any) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+    })),
+    shippingAddress: body.shippingAddress,
+  });
+
+  return c.json(response, 201);
+});
+
+// Get order
+app.get('/orders/:id', async (c) => {
+  const order = await sdk.order.getOrder({
+    orderId: c.req.param('id'),
+    include: ['customer', 'shipments'],
+  });
+
+  return c.json(order);
+});
+
+// List orders
+app.get('/orders', async (c) => {
+  const { customerId, status, page, pageSize } = c.req.query();
+
+  const response = await sdk.order.listOrders({
+    customerId,
+    statuses: status ? [status as any] : undefined,
+    pagination: {
+      page: Number(page) || 1,
+      pageSize: Number(pageSize) || 20,
+    },
+  });
+
+  return c.json(response);
+});
+
+export default app;
+```
+</Tab>
+<Tab value="With Middleware">
+```typescript title="apps/api-gateway/src/sdk.ts"
+import { createConfiguredSdk } from '@org/sdk-typescript';
+import { getAuthToken } from './auth';
+
+// Production SDK with all middleware
+export const sdk = createConfiguredSdk({
+  baseUrl: process.env.API_BASE_URL!,
+  auth: async () => {
+    const token = await getAuthToken();
+    return `Bearer ${token}`;
+  },
+  logging: process.env.NODE_ENV !== 'production',
+  retry: {
+    maxRetries: 3,
+    retryableErrors: ['UNAVAILABLE', 'DEADLINE_EXCEEDED'],
+  },
+});
+
+// Or manually compose
+import { createSdk } from '@org/sdk-typescript';
+import { createGrpcTransport } from '@org/sdk-typescript/transports/grpc';
+import { authMiddleware, loggingMiddleware, retryMiddleware, metricsMiddleware } from '@org/sdk-typescript/middleware';
+import { compose } from '@org/sdk-typescript/middleware';
+
+const transport = createGrpcTransport({
+  host: process.env.GRPC_HOST!,
+  tls: true,
+});
+
+const middlewareStack = compose(
+  authMiddleware(() => getAuthToken()),
+  loggingMiddleware({ level: 'debug' }),
+  retryMiddleware({ maxRetries: 3 }),
+  metricsMiddleware({ prefix: 'sdk' })
+);
+
+export const sdkWithMiddleware = createSdk({
+  transport: middlewareStack(transport),
+});
+```
+</Tab>
+<Tab value="Streaming">
+```typescript title="apps/dashboard/src/hooks/useOrderUpdates.ts"
+import { useEffect, useState, useCallback } from 'react';
+import { createSdk } from '@org/sdk-typescript';
+import { createWebSocketTransport } from '@org/sdk-typescript/transports/websocket';
+import type { OrderEvent, OrderStatus } from '@org/sdk-typescript';
+
+const sdk = createSdk({
+  transport: createWebSocketTransport({
+    url: process.env.NEXT_PUBLIC_WS_URL!,
+    reconnect: true,
+  }),
+});
+
+export const useOrderUpdates = (orderId: string) => {
+  const [status, setStatus] = useState<OrderStatus | null>(null);
+  const [events, setEvents] = useState<OrderEvent[]>([]);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const subscribe = async () => {
+      try {
+        const stream = sdk.order.watchOrder(
+          { orderId },
+          { signal: controller.signal }
+        );
+
+        for await (const event of stream) {
+          setStatus(event.newStatus);
+          setEvents(prev => [...prev, event]);
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setError(err as Error);
+        }
+      }
+    };
+
+    subscribe();
+
+    return () => controller.abort();
+  }, [orderId]);
+
+  return { status, events, error };
+};
+
+// Server-side streaming with Node.js
+export const streamOrderUpdates = async (orderId: string) => {
+  console.log(`Watching order ${orderId}...`);
+
+  for await (const event of sdk.order.watchOrder({ orderId })) {
+    console.log(`Order ${event.orderId}: ${event.previousStatus} -> ${event.newStatus}`);
+    
+    if (event.newStatus === 'DELIVERED' || event.newStatus === 'CANCELLED') {
+      break;
+    }
+  }
+
+  console.log('Stream ended');
+};
+```
+</Tab>
+<Tab value="Error Handling">
+```typescript title="apps/api-gateway/src/error-handling.ts"
+import { 
+  SdkError, 
+  NotFoundError, 
+  ValidationError, 
+  UnauthorizedError,
+  TimeoutError,
+  isRetryable 
+} from '@org/sdk-typescript/errors';
+import { sdk } from './sdk';
+
+// Typed error handling
+export const getOrderWithErrorHandling = async (orderId: string) => {
+  try {
+    return await sdk.order.getOrder({ orderId });
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      // Order doesn't exist
+      return null;
+    }
+    
+    if (error instanceof ValidationError) {
+      // Invalid request
+      console.error('Validation errors:', error.errors);
+      throw new BadRequestError(error.message);
+    }
+    
+    if (error instanceof UnauthorizedError) {
+      // Token expired or invalid
+      throw new AuthenticationError('Please log in again');
+    }
+    
+    if (error instanceof TimeoutError) {
+      // Request timed out
+      console.error('Request timed out');
+      throw new ServiceUnavailableError('Service temporarily unavailable');
+    }
+    
+    if (error instanceof SdkError && isRetryable(error)) {
+      // Transient error - caller can retry
+      throw error;
+    }
+    
+    // Unknown error
+    console.error('Unexpected error:', error);
+    throw new InternalServerError('An unexpected error occurred');
+  }
+};
+
+// Error boundary for React
+import { ErrorBoundary } from 'react-error-boundary';
+import { SdkError } from '@org/sdk-typescript/errors';
+
+const SdkErrorFallback = ({ error, resetErrorBoundary }) => {
+  if (error instanceof SdkError) {
+    return (
+      <div className="error-container">
+        <h2>Something went wrong</h2>
+        <p>{error.message}</p>
+        <p>Error code: {error.code}</p>
+        <button onClick={resetErrorBoundary}>Try again</button>
+      </div>
+    );
+  }
+  
+  throw error; // Re-throw non-SDK errors
+};
+
+export const OrderPage = () => (
+  <ErrorBoundary FallbackComponent={SdkErrorFallback}>
+    <OrderDetails />
+  </ErrorBoundary>
+);
+```
+</Tab>
+</Tabs>
+
+## Testing
+
+```typescript title="packages/sdk-typescript/test/order-client.test.ts"
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createOrderClient } from '../src/clients/order-client';
+import { createMockTransport } from '../src/transports/mock';
+import type { Order, OrderStatus } from '../src/generated/order';
+
+describe('OrderClient', () => {
+  const mockTransport = createMockTransport();
+  const orderClient = createOrderClient(mockTransport);
+
+  beforeEach(() => {
+    mockTransport.reset();
+  });
+
+  describe('createOrder', () => {
+    it('should create an order successfully', async () => {
+      const mockResponse = {
+        orderId: 'order-123',
+        orderNumber: 'ORD-001',
+        status: 'PENDING' as OrderStatus,
+        createdAt: new Date(),
+      };
+
+      mockTransport.mockUnary('org.order.v1.OrderService', 'CreateOrder', mockResponse);
+
+      const response = await orderClient.createOrder({
+        customerId: 'cust-456',
+        items: [{ productId: 'prod-789', quantity: 2 }],
+      });
+
+      expect(response.orderId).toBe('order-123');
+      expect(response.status).toBe('PENDING');
+    });
+
+    it('should throw ValidationError for invalid request', async () => {
+      mockTransport.mockUnaryError('org.order.v1.OrderService', 'CreateOrder', {
+        code: 'INVALID_ARGUMENT',
+        message: 'customer_id is required',
+      });
+
+      await expect(
+        orderClient.createOrder({
+          customerId: '',
+          items: [],
+        })
+      ).rejects.toThrow('customer_id is required');
+    });
+  });
+
+  describe('watchOrder', () => {
+    it('should stream order events', async () => {
+      const events = [
+        { orderId: 'order-123', previousStatus: 'PENDING', newStatus: 'CONFIRMED' },
+        { orderId: 'order-123', previousStatus: 'CONFIRMED', newStatus: 'SHIPPED' },
+      ];
+
+      mockTransport.mockServerStream('org.order.v1.OrderService', 'WatchOrder', events);
+
+      const receivedEvents: any[] = [];
+      for await (const event of orderClient.watchOrder({ orderId: 'order-123' })) {
+        receivedEvents.push(event);
+      }
+
+      expect(receivedEvents).toHaveLength(2);
+      expect(receivedEvents[0].newStatus).toBe('CONFIRMED');
+      expect(receivedEvents[1].newStatus).toBe('SHIPPED');
+    });
+  });
+});
+
+// Mock transport implementation
+export const createMockTransport = () => {
+  const unaryMocks = new Map<string, any>();
+  const streamMocks = new Map<string, any[]>();
+  const errorMocks = new Map<string, any>();
+
+  return {
+    mockUnary: (service: string, method: string, response: any) => {
+      unaryMocks.set(`${service}/${method}`, response);
+    },
+
+    mockUnaryError: (service: string, method: string, error: any) => {
+      errorMocks.set(`${service}/${method}`, error);
+    },
+
+    mockServerStream: (service: string, method: string, events: any[]) => {
+      streamMocks.set(`${service}/${method}`, events);
+    },
+
+    reset: () => {
+      unaryMocks.clear();
+      streamMocks.clear();
+      errorMocks.clear();
+    },
+
+    unary: async (method: any, request: any) => {
+      const key = `${method.service}/${method.method}`;
+      
+      if (errorMocks.has(key)) {
+        const error = errorMocks.get(key);
+        throw new Error(error.message);
+      }
+      
+      return unaryMocks.get(key);
+    },
+
+    serverStream: async function* (method: any, request: any) {
+      const key = `${method.service}/${method.method}`;
+      const events = streamMocks.get(key) ?? [];
+      for (const event of events) {
+        yield event;
+      }
+    },
+
+    clientStream: () => { throw new Error('Not implemented'); },
+    bidiStream: () => { throw new Error('Not implemented'); },
+    close: async () => {},
+  };
+};
+```
+
+## Build Configuration
+
+```typescript title="packages/sdk-typescript/tsup.config.ts"
+import { defineConfig } from 'tsup';
+
+export default defineConfig({
+  entry: {
+    index: 'src/index.ts',
+    'clients/index': 'src/clients/index.ts',
+    'transports/index': 'src/transports/index.ts',
+    'transports/grpc': 'src/transports/grpc.ts',
+    'transports/http': 'src/transports/http.ts',
+    'transports/websocket': 'src/transports/websocket.ts',
+    'middleware/index': 'src/middleware/index.ts',
+    'errors/index': 'src/errors/index.ts',
+  },
+  format: ['esm'],
+  dts: true,
+  splitting: true,
+  sourcemap: true,
+  clean: true,
+  treeshake: true,
+  external: ['@grpc/grpc-js'],
+  esbuildOptions(options) {
+    options.conditions = ['module'];
+  },
+});
+```
+
+## Next Steps
+
+- **[Multi-Language SDKs](/docs/code-quality/architecture/infrastructure-as-code/sdk-modules/multi-language)** - Generate SDKs for Go, .NET, Python
+- **[Versioning & Publishing](/docs/code-quality/architecture/infrastructure-as-code/sdk-modules/versioning)** - SDK release management

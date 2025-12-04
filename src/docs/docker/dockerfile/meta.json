@@ -1,0 +1,11 @@
+{
+  "title": "Dockerfile",
+  "description": "Building optimized Docker images with best practices",
+  "icon": "FileCode",
+  "pages": [
+    "index",
+    "instructions",
+    "multi-stage",
+    "best-practices"
+  ]
+}

@@ -1,0 +1,1211 @@
+---
+title: Protocol Definitions
+description: Define service contracts using Protocol Buffers, OpenAPI, and JSON Schema for multi-language code generation.
+---
+
+import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { File, Files, Folder } from 'fumadocs-ui/components/files';
+import { Steps } from 'fumadocs-ui/components/steps';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+# Protocol Definitions
+
+Protocol definitions are the **single source of truth** for your API contracts. From these definitions, you generate type-safe clients, server stubs, and documentation for any programming language.
+
+<Callout type="info">
+We recommend **Protocol Buffers** for internal service-to-service communication and **OpenAPI** for public REST APIs. Both can coexist in the same codebase.
+</Callout>
+
+## Protocol Options
+
+| Protocol | Best For | Strengths | Code Gen |
+|----------|----------|-----------|----------|
+| **Protocol Buffers** | Internal services | Binary, streaming, gRPC | Excellent |
+| **OpenAPI** | Public REST APIs | Human readable, tooling | Good |
+| **JSON Schema** | Validation, events | Flexible, widely supported | Moderate |
+| **GraphQL** | Frontend APIs | Flexible queries | Good |
+
+## Protocol Buffers Setup
+
+<Steps>
+### Install Buf CLI
+
+```bash title="terminal"
+# macOS
+brew install bufbuild/buf/buf
+
+# npm (cross-platform)
+npm install -g @bufbuild/buf
+
+# Verify installation
+buf --version
+```
+
+### Configure Buf Workspace
+
+```yaml title="packages/proto/buf.yaml"
+version: v2
+name: buf.build/org/platform
+deps:
+  - buf.build/googleapis/googleapis
+  - buf.build/grpc-ecosystem/grpc-gateway
+breaking:
+  use:
+    - FILE
+lint:
+  use:
+    - DEFAULT
+    - COMMENTS
+  except:
+    - PACKAGE_VERSION_SUFFIX
+  enum_zero_value_suffix: _UNSPECIFIED
+  rpc_allow_same_request_response: false
+  rpc_allow_google_protobuf_empty_requests: true
+  rpc_allow_google_protobuf_empty_responses: true
+  service_suffix: Service
+```
+
+### Configure Code Generation
+
+```yaml title="packages/proto/buf.gen.yaml"
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/org/sdk-go
+    - file_option: csharp_namespace_prefix
+      value: Org
+plugins:
+  # TypeScript generation
+  - remote: buf.build/connectrpc/es
+    out: ../sdk-typescript/src/generated
+    opt:
+      - target=ts
+      - import_extension=none
+
+  # Go generation
+  - remote: buf.build/protocolbuffers/go
+    out: ../sdk-go
+    opt:
+      - paths=source_relative
+  - remote: buf.build/connectrpc/go
+    out: ../sdk-go
+    opt:
+      - paths=source_relative
+
+  # C# generation
+  - remote: buf.build/protocolbuffers/csharp
+    out: ../sdk-dotnet/Generated
+  - remote: buf.build/grpc/csharp
+    out: ../sdk-dotnet/Generated
+
+  # Python generation
+  - remote: buf.build/protocolbuffers/python
+    out: ../sdk-python/generated
+  - remote: buf.build/grpc/python
+    out: ../sdk-python/generated
+
+  # OpenAPI generation (for REST gateway)
+  - remote: buf.build/grpc-ecosystem/openapiv2
+    out: ../openapi
+    opt:
+      - allow_merge=true
+      - merge_file_name=api
+
+  # Documentation
+  - remote: buf.build/community/pseudomuto-protoc-gen-doc
+    out: ../docs
+    opt:
+      - markdown,api.md
+```
+
+### Define Common Types
+
+```protobuf title="packages/proto/common/v1/types.proto"
+syntax = "proto3";
+
+package org.common.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/org/sdk-go/common/v1;commonv1";
+option csharp_namespace = "Org.Common.V1";
+option java_package = "com.org.common.v1";
+
+// Money represents a monetary value
+message Money {
+  // Amount in smallest currency unit (cents for USD)
+  int64 amount = 1;
+  // ISO 4217 currency code (e.g., "USD", "EUR")
+  string currency = 2;
+}
+
+// Address represents a physical address
+message Address {
+  string street = 1;
+  string street2 = 2;
+  string city = 3;
+  string state = 4;
+  string postal_code = 5;
+  // ISO 3166-1 alpha-2 country code
+  string country = 6;
+}
+
+// Pagination request parameters
+message PaginationRequest {
+  // Page number (1-indexed)
+  int32 page = 1;
+  // Items per page (max 100)
+  int32 page_size = 2;
+  // Cursor for cursor-based pagination
+  string cursor = 3;
+}
+
+// Pagination response metadata
+message PaginationResponse {
+  int32 total_count = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+  string next_cursor = 4;
+  bool has_next_page = 5;
+}
+
+// Standard error details
+message ErrorDetail {
+  // Error code (e.g., "VALIDATION_ERROR")
+  string code = 1;
+  // Human-readable message
+  string message = 2;
+  // Field that caused the error (for validation)
+  string field = 3;
+  // Additional context
+  map<string, string> metadata = 4;
+}
+
+// Audit information
+message AuditInfo {
+  google.protobuf.Timestamp created_at = 1;
+  string created_by = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  string updated_by = 4;
+}
+```
+
+### Define Service Contract
+
+```protobuf title="packages/proto/order/v1/order.proto"
+syntax = "proto3";
+
+package org.order.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/field_mask.proto";
+import "google/api/annotations.proto";
+import "common/v1/types.proto";
+
+option go_package = "github.com/org/sdk-go/order/v1;orderv1";
+option csharp_namespace = "Org.Order.V1";
+
+// OrderService handles order management operations
+service OrderService {
+  // CreateOrder creates a new order
+  rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/orders"
+      body: "*"
+    };
+  }
+
+  // GetOrder retrieves an order by ID
+  rpc GetOrder(GetOrderRequest) returns (Order) {
+    option (google.api.http) = {
+      get: "/api/v1/orders/{order_id}"
+    };
+  }
+
+  // ListOrders lists orders with filtering
+  rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/orders"
+    };
+  }
+
+  // UpdateOrder updates an existing order
+  rpc UpdateOrder(UpdateOrderRequest) returns (Order) {
+    option (google.api.http) = {
+      patch: "/api/v1/orders/{order_id}"
+      body: "*"
+    };
+  }
+
+  // CancelOrder cancels an order
+  rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/orders/{order_id}/cancel"
+      body: "*"
+    };
+  }
+
+  // WatchOrder streams order status updates
+  rpc WatchOrder(WatchOrderRequest) returns (stream OrderEvent);
+
+  // BatchCreateOrders creates multiple orders
+  rpc BatchCreateOrders(stream CreateOrderRequest) returns (BatchCreateOrdersResponse);
+}
+
+// Order represents a customer order
+message Order {
+  // Unique order identifier
+  string id = 1;
+  // Order number for display
+  string order_number = 2;
+  // Customer who placed the order
+  string customer_id = 3;
+  // Order line items
+  repeated OrderItem items = 4;
+  // Current order status
+  OrderStatus status = 5;
+  // Order totals
+  OrderTotals totals = 6;
+  // Shipping address
+  org.common.v1.Address shipping_address = 7;
+  // Billing address
+  org.common.v1.Address billing_address = 8;
+  // Audit information
+  org.common.v1.AuditInfo audit = 9;
+  // Additional metadata
+  map<string, string> metadata = 10;
+}
+
+// OrderItem represents a line item in an order
+message OrderItem {
+  string id = 1;
+  string product_id = 2;
+  string product_name = 3;
+  string sku = 4;
+  int32 quantity = 5;
+  org.common.v1.Money unit_price = 6;
+  org.common.v1.Money line_total = 7;
+  map<string, string> attributes = 8;
+}
+
+// OrderTotals contains calculated order totals
+message OrderTotals {
+  org.common.v1.Money subtotal = 1;
+  org.common.v1.Money tax = 2;
+  org.common.v1.Money shipping = 3;
+  org.common.v1.Money discount = 4;
+  org.common.v1.Money total = 5;
+}
+
+// OrderStatus represents the order lifecycle
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  ORDER_STATUS_DRAFT = 1;
+  ORDER_STATUS_PENDING = 2;
+  ORDER_STATUS_CONFIRMED = 3;
+  ORDER_STATUS_PROCESSING = 4;
+  ORDER_STATUS_SHIPPED = 5;
+  ORDER_STATUS_DELIVERED = 6;
+  ORDER_STATUS_CANCELLED = 7;
+  ORDER_STATUS_REFUNDED = 8;
+}
+
+// CreateOrderRequest
+message CreateOrderRequest {
+  string customer_id = 1;
+  repeated CreateOrderItem items = 2;
+  org.common.v1.Address shipping_address = 3;
+  org.common.v1.Address billing_address = 4;
+  map<string, string> metadata = 5;
+  // Idempotency key to prevent duplicate orders
+  string idempotency_key = 6;
+}
+
+message CreateOrderItem {
+  string product_id = 1;
+  int32 quantity = 2;
+  map<string, string> attributes = 3;
+}
+
+message CreateOrderResponse {
+  string order_id = 1;
+  string order_number = 2;
+  OrderStatus status = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+// GetOrderRequest
+message GetOrderRequest {
+  string order_id = 1;
+  // Include related data
+  repeated string include = 2; // e.g., ["customer", "shipments"]
+}
+
+// ListOrdersRequest
+message ListOrdersRequest {
+  // Filter by customer
+  string customer_id = 1;
+  // Filter by status
+  repeated OrderStatus statuses = 2;
+  // Date range filter
+  google.protobuf.Timestamp created_after = 3;
+  google.protobuf.Timestamp created_before = 4;
+  // Pagination
+  org.common.v1.PaginationRequest pagination = 5;
+  // Sort field
+  string sort_by = 6;
+  // Sort direction
+  SortDirection sort_direction = 7;
+}
+
+enum SortDirection {
+  SORT_DIRECTION_UNSPECIFIED = 0;
+  SORT_DIRECTION_ASC = 1;
+  SORT_DIRECTION_DESC = 2;
+}
+
+message ListOrdersResponse {
+  repeated Order orders = 1;
+  org.common.v1.PaginationResponse pagination = 2;
+}
+
+// UpdateOrderRequest
+message UpdateOrderRequest {
+  string order_id = 1;
+  // Fields to update
+  org.common.v1.Address shipping_address = 2;
+  org.common.v1.Address billing_address = 3;
+  map<string, string> metadata = 4;
+  // Field mask for partial updates
+  google.protobuf.FieldMask update_mask = 5;
+}
+
+// CancelOrderRequest
+message CancelOrderRequest {
+  string order_id = 1;
+  string reason = 2;
+  bool request_refund = 3;
+}
+
+message CancelOrderResponse {
+  string order_id = 1;
+  OrderStatus status = 2;
+  string refund_id = 3;
+}
+
+// WatchOrderRequest
+message WatchOrderRequest {
+  string order_id = 1;
+}
+
+// OrderEvent for streaming updates
+message OrderEvent {
+  string order_id = 1;
+  string event_type = 2;
+  OrderStatus previous_status = 3;
+  OrderStatus new_status = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  map<string, string> data = 6;
+}
+
+// BatchCreateOrdersResponse
+message BatchCreateOrdersResponse {
+  repeated CreateOrderResponse orders = 1;
+  int32 success_count = 2;
+  int32 failure_count = 3;
+  repeated BatchError errors = 4;
+}
+
+message BatchError {
+  int32 index = 1;
+  string code = 2;
+  string message = 3;
+}
+```
+
+### Generate Code
+
+```bash title="terminal"
+# Generate all SDKs
+cd packages/proto
+buf generate
+
+# Lint proto files
+buf lint
+
+# Check breaking changes
+buf breaking --against '.git#branch=main'
+
+# Format proto files
+buf format -w
+```
+</Steps>
+
+## OpenAPI Specification
+
+For public REST APIs or when you need human-readable documentation:
+
+<Tabs items={['OpenAPI Spec', 'Generated from Proto', 'Validation']}>
+<Tab value="OpenAPI Spec">
+```yaml title="packages/openapi/order-api.yaml"
+openapi: 3.1.0
+info:
+  title: Order API
+  version: 1.0.0
+  description: API for managing customer orders
+  contact:
+    name: Platform Team
+    email: platform@org.com
+
+servers:
+  - url: https://api.org.com/v1
+    description: Production
+  - url: https://api.staging.org.com/v1
+    description: Staging
+
+security:
+  - bearerAuth: []
+
+paths:
+  /orders:
+    get:
+      operationId: listOrders
+      summary: List orders
+      tags: [Orders]
+      parameters:
+        - name: customer_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/OrderStatus'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: List of orders
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListOrdersResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      operationId: createOrder
+      summary: Create a new order
+      tags: [Orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '201':
+          description: Order created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateOrderResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /orders/{orderId}:
+    get:
+      operationId: getOrder
+      summary: Get order by ID
+      tags: [Orders]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Order details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      operationId: updateOrder
+      summary: Update an order
+      tags: [Orders]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrderRequest'
+      responses:
+        '200':
+          description: Order updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+
+  /orders/{orderId}/cancel:
+    post:
+      operationId: cancelOrder
+      summary: Cancel an order
+      tags: [Orders]
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelOrderRequest'
+      responses:
+        '200':
+          description: Order cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelOrderResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSizeParam:
+      name: page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  schemas:
+    Order:
+      type: object
+      required: [id, order_number, customer_id, status, items, totals]
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_number:
+          type: string
+        customer_id:
+          type: string
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        totals:
+          $ref: '#/components/schemas/OrderTotals'
+        shipping_address:
+          $ref: '#/components/schemas/Address'
+        billing_address:
+          $ref: '#/components/schemas/Address'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    OrderItem:
+      type: object
+      properties:
+        id:
+          type: string
+        product_id:
+          type: string
+        product_name:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+        unit_price:
+          $ref: '#/components/schemas/Money'
+        line_total:
+          $ref: '#/components/schemas/Money'
+
+    OrderTotals:
+      type: object
+      properties:
+        subtotal:
+          $ref: '#/components/schemas/Money'
+        tax:
+          $ref: '#/components/schemas/Money'
+        shipping:
+          $ref: '#/components/schemas/Money'
+        discount:
+          $ref: '#/components/schemas/Money'
+        total:
+          $ref: '#/components/schemas/Money'
+
+    OrderStatus:
+      type: string
+      enum:
+        - DRAFT
+        - PENDING
+        - CONFIRMED
+        - PROCESSING
+        - SHIPPED
+        - DELIVERED
+        - CANCELLED
+        - REFUNDED
+
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: integer
+          description: Amount in smallest currency unit
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          example: USD
+
+    Address:
+      type: object
+      properties:
+        street:
+          type: string
+        street2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postal_code:
+          type: string
+        country:
+          type: string
+          pattern: '^[A-Z]{2}$'
+
+    CreateOrderRequest:
+      type: object
+      required: [customer_id, items]
+      properties:
+        customer_id:
+          type: string
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [product_id, quantity]
+            properties:
+              product_id:
+                type: string
+              quantity:
+                type: integer
+                minimum: 1
+        shipping_address:
+          $ref: '#/components/schemas/Address'
+        idempotency_key:
+          type: string
+
+    CreateOrderResponse:
+      type: object
+      properties:
+        order_id:
+          type: string
+        order_number:
+          type: string
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        created_at:
+          type: string
+          format: date-time
+
+    UpdateOrderRequest:
+      type: object
+      properties:
+        shipping_address:
+          $ref: '#/components/schemas/Address'
+        billing_address:
+          $ref: '#/components/schemas/Address'
+
+    CancelOrderRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+        request_refund:
+          type: boolean
+
+    CancelOrderResponse:
+      type: object
+      properties:
+        order_id:
+          type: string
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        refund_id:
+          type: string
+
+    ListOrdersResponse:
+      type: object
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+        total_count:
+          type: integer
+        page:
+          type: integer
+        page_size:
+          type: integer
+        has_next_page:
+          type: boolean
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+```
+</Tab>
+<Tab value="Generated from Proto">
+```yaml title="packages/openapi/api.swagger.yaml (auto-generated)"
+# This file is generated from proto files using grpc-gateway
+# Do not edit manually - changes will be overwritten
+
+swagger: "2.0"
+info:
+  title: Order API
+  version: "1.0"
+host: api.org.com
+basePath: /api/v1
+schemes:
+  - https
+consumes:
+  - application/json
+produces:
+  - application/json
+
+paths:
+  /orders:
+    get:
+      operationId: OrderService_ListOrders
+      responses:
+        "200":
+          description: A successful response.
+          schema:
+            $ref: "#/definitions/v1ListOrdersResponse"
+      parameters:
+        - name: customer_id
+          in: query
+          required: false
+          type: string
+        - name: statuses
+          in: query
+          required: false
+          type: array
+          items:
+            type: string
+            enum:
+              - ORDER_STATUS_UNSPECIFIED
+              - ORDER_STATUS_DRAFT
+              - ORDER_STATUS_PENDING
+      tags:
+        - OrderService
+    post:
+      operationId: OrderService_CreateOrder
+      responses:
+        "200":
+          description: A successful response.
+          schema:
+            $ref: "#/definitions/v1CreateOrderResponse"
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/v1CreateOrderRequest"
+      tags:
+        - OrderService
+
+definitions:
+  v1Order:
+    type: object
+    properties:
+      id:
+        type: string
+      order_number:
+        type: string
+      customer_id:
+        type: string
+      items:
+        type: array
+        items:
+          $ref: "#/definitions/v1OrderItem"
+      status:
+        $ref: "#/definitions/v1OrderStatus"
+  # ... rest of definitions
+```
+</Tab>
+<Tab value="Validation">
+```typescript title="packages/sdk-typescript/src/validation.ts"
+import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
+import { schema } from './generated/openapi-schema';
+
+const ajv = new Ajv({ allErrors: true, coerceTypes: true });
+addFormats(ajv);
+
+// Compile validators from OpenAPI schema
+const validators = new Map<string, ReturnType<typeof ajv.compile>>();
+
+for (const [name, def] of Object.entries(schema.components?.schemas ?? {})) {
+  validators.set(name, ajv.compile(def));
+}
+
+export const validate = <T>(schemaName: string, data: unknown): T => {
+  const validator = validators.get(schemaName);
+  if (!validator) {
+    throw new Error(`Unknown schema: ${schemaName}`);
+  }
+
+  if (!validator(data)) {
+    const errors = validator.errors?.map(e => ({
+      field: e.instancePath.replace(/^\//, '').replace(/\//g, '.'),
+      message: e.message ?? 'Validation error',
+      params: e.params,
+    }));
+    throw new ValidationError(errors ?? []);
+  }
+
+  return data as T;
+};
+
+// Usage
+const createOrder = async (input: unknown) => {
+  const request = validate<CreateOrderRequest>('CreateOrderRequest', input);
+  return orderClient.createOrder(request);
+};
+```
+</Tab>
+</Tabs>
+
+## Code Generation Pipeline
+
+```yaml title=".github/workflows/generate-sdks.yml"
+name: Generate SDKs
+
+on:
+  push:
+    paths:
+      - 'packages/proto/**'
+      - 'packages/openapi/**'
+    branches: [main]
+  pull_request:
+    paths:
+      - 'packages/proto/**'
+      - 'packages/openapi/**'
+
+jobs:
+  lint-proto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: bufbuild/buf-setup-action@v1
+      
+      - name: Lint protos
+        run: buf lint packages/proto
+        
+      - name: Check breaking changes
+        if: github.event_name == 'pull_request'
+        run: buf breaking packages/proto --against 'https://github.com/${{ github.repository }}.git#branch=main,subdir=packages/proto'
+
+  generate-typescript:
+    needs: lint-proto
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: bufbuild/buf-setup-action@v1
+      
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      
+      - name: Generate TypeScript SDK
+        run: |
+          cd packages/proto
+          buf generate --template buf.gen.yaml --path order --path common
+          
+      - name: Build TypeScript SDK
+        run: |
+          cd packages/sdk-typescript
+          pnpm install
+          pnpm build
+          pnpm test
+          
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-typescript
+          path: packages/sdk-typescript/dist
+
+  generate-go:
+    needs: lint-proto
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: bufbuild/buf-setup-action@v1
+      
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      
+      - name: Generate Go SDK
+        run: |
+          cd packages/proto
+          buf generate --template buf.gen.yaml --path order --path common
+          
+      - name: Build Go SDK
+        run: |
+          cd packages/sdk-go
+          go mod tidy
+          go build ./...
+          go test ./...
+          
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-go
+          path: packages/sdk-go
+
+  generate-dotnet:
+    needs: lint-proto
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: bufbuild/buf-setup-action@v1
+      
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0'
+      
+      - name: Generate .NET SDK
+        run: |
+          cd packages/proto
+          buf generate --template buf.gen.yaml --path order --path common
+          
+      - name: Build .NET SDK
+        run: |
+          cd packages/sdk-dotnet
+          dotnet restore
+          dotnet build
+          dotnet test
+          
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-dotnet
+          path: packages/sdk-dotnet/bin
+
+  generate-openapi:
+    needs: lint-proto
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: bufbuild/buf-setup-action@v1
+      
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          
+      - name: Generate OpenAPI from Proto
+        run: |
+          cd packages/proto
+          buf generate --template buf.gen.yaml --include-imports
+          
+      - name: Validate OpenAPI
+        run: |
+          npx @redocly/cli lint packages/openapi/api.swagger.yaml
+          
+      - name: Generate TypeScript from OpenAPI
+        run: |
+          npx openapi-typescript packages/openapi/order-api.yaml \
+            -o packages/sdk-typescript/src/generated/openapi-types.ts
+            
+      - name: Upload OpenAPI spec
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: packages/openapi
+```
+
+## Directory Structure
+
+<Files>
+  <Folder name="packages" defaultOpen>
+    <Folder name="proto" defaultOpen>
+      <File name="buf.yaml" />
+      <File name="buf.gen.yaml" />
+      <File name="buf.lock" />
+      <Folder name="common">
+        <Folder name="v1">
+          <File name="types.proto" />
+        </Folder>
+      </Folder>
+      <Folder name="order">
+        <Folder name="v1">
+          <File name="order.proto" />
+          <File name="order_events.proto" />
+        </Folder>
+      </Folder>
+      <Folder name="payment">
+        <Folder name="v1">
+          <File name="payment.proto" />
+        </Folder>
+      </Folder>
+      <Folder name="notification">
+        <Folder name="v1">
+          <File name="notification.proto" />
+        </Folder>
+      </Folder>
+    </Folder>
+    <Folder name="openapi">
+      <File name="order-api.yaml" />
+      <File name="payment-api.yaml" />
+      <File name="api.swagger.yaml" />
+    </Folder>
+    <Folder name="sdk-typescript">
+      <Folder name="src">
+        <Folder name="generated">
+          <File name="order.ts" />
+          <File name="payment.ts" />
+          <File name="common.ts" />
+        </Folder>
+      </Folder>
+    </Folder>
+    <Folder name="sdk-go">
+      <Folder name="order">
+        <Folder name="v1">
+          <File name="order.pb.go" />
+          <File name="order_grpc.pb.go" />
+        </Folder>
+      </Folder>
+    </Folder>
+    <Folder name="sdk-dotnet">
+      <Folder name="Generated">
+        <File name="Order.cs" />
+        <File name="OrderGrpc.cs" />
+      </Folder>
+    </Folder>
+  </Folder>
+</Files>
+
+## Best Practices
+
+<Accordions>
+  <Accordion title="Versioning Strategy">
+    - Use package versioning: `org.order.v1`, `org.order.v2`
+    - Never break existing fields - add new fields instead
+    - Use `reserved` for removed fields
+    - Run `buf breaking` in CI to catch breaking changes
+  </Accordion>
+  <Accordion title="Naming Conventions">
+    - Services: `{Resource}Service` (OrderService)
+    - Methods: `{Verb}{Resource}` (CreateOrder, ListOrders)
+    - Messages: `{Method}Request`, `{Method}Response`
+    - Enums: `{TYPE}_UNSPECIFIED` for zero value
+  </Accordion>
+  <Accordion title="Documentation">
+    - Document every field with comments
+    - Include examples in descriptions
+    - Generate API docs automatically
+    - Keep proto files as living documentation
+  </Accordion>
+</Accordions>
+
+## Next Steps
+
+- **[TypeScript SDK](/docs/code-quality/architecture/infrastructure-as-code/sdk-modules/typescript)** - Building the TypeScript SDK
+- **[Multi-Language SDKs](/docs/code-quality/architecture/infrastructure-as-code/sdk-modules/multi-language)** - Go, .NET, Python generation
