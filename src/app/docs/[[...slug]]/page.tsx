@@ -7,9 +7,9 @@ import {
 import { createRelativeLink } from 'fumadocs-ui/mdx'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { seo } from '@/lib/seo'
 import { getPageImage, source } from '@/lib/source'
 import { getMDXComponents } from '@/mdx-components'
-import { seo } from '@/lib/seo'
 
 export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
 	const params = await props.params

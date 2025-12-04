@@ -5,7 +5,6 @@
 	"root": true,
 	"pages": [
 		"index",
-		"---CLI Installation---",
 		"cli-setup",
 		"---Core Services---",
 		"iam",

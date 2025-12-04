@@ -5,7 +5,6 @@
 	"root": true,
 	"pages": [
 		"index",
-		"---Code Style---",
 		"patterns",
 		"principles"
 	]
