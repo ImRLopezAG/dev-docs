@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 export const seo = ({
-	title = 'Docs dev',
+	title = 'Dev Docs',
 	description = 'The ultimate resource for developers to learn, build, and innovate with cutting-edge technologies.',
 	keywords = 'Learn, Build, Innovate, Developer Resources, Coding Tutorials, Tech Guides, Programming Tips',
 	image = 'https://docs.imrlopez.dev/og-image.png',
@@ -21,9 +21,9 @@ export const seo = ({
 	return {
 		metadataBase: new URL(url),
 		title: {
-			absolute: title || 'Docs dev',
-			template: `%s | ${title || 'My Portfolio'}`,
-			default: title || 'My Portfolio',
+			absolute: title || 'Dev Docs',
+			template: `%s | ${title || 'Dev Docs'}`,
+			default: title || 'Dev Docs',
 		},
 		description: description,
 		category: 'Portfolio',

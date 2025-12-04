@@ -15,7 +15,7 @@ export async function GET(
     <DefaultImage
       title={page.data.title}
       description={page.data.description}
-      site="My App"
+      site="Dev Docs"
     />,
     {
       width: 1200,

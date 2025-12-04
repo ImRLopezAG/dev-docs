@@ -1,10 +1,13 @@
 import { RootProvider } from 'fumadocs-ui/provider/next'
 import { Inter } from 'next/font/google'
 import './global.css'
+import { seo } from '@/lib/seo'
 
 const inter = Inter({
 	subsets: ['latin'],
 })
+
+export const metadata = seo({})
 
 export default function Layout({ children }: LayoutProps<'/'>) {
 	return (
